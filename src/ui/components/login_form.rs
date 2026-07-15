@@ -1,6 +1,6 @@
 use super::AppEditableText;
 use crate::{
-	GameState,
+	GameState, component_name,
 	game::{ApClient, SessionData},
 };
 use bevy::{
@@ -15,10 +15,10 @@ pub struct LoginFormComponent;
 impl LoginFormComponent {
 	fn scene() -> impl Scene {
 		bsn! {
+			{ component_name!(LoginFormComponent) }
 			Node {
 				padding: UiRect::all(px(16)),
 				border_radius: BorderRadius::all(px(16))
-				max_width: px(320),
 				display: Display::Flex,
 				flex_direction: FlexDirection::Column,
 			}
