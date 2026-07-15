@@ -4,6 +4,7 @@ pub mod main_menu;
 use crate::{GameCamera, ui::main_menu::MainMenuPlugin};
 use bevy::prelude::*;
 use components::{FruitCircleComponent, LoginFormComponent, NextFruitComponent, ScoreComponent};
+use main_menu::MainMenuComponent;
 
 #[macro_export]
 macro_rules! component_name {
@@ -31,11 +32,12 @@ fn template() -> impl Scene {
 				flex_direction: FlexDirection::Row,
 				width: percent(100),
 				height: percent(100),
-				justify_content: JustifyContent::SpaceBetween,
+				justify_content: JustifyContent::FlexStart,
 				align_items: AlignItems::Stretch,
 			}
 			Children [
 				left(),
+				middle(),
 				right(),
 			]
 			on(|event: On<Add, Node>, mut commands: Commands, game_camera: Single<Entity, With<GameCamera>>| {
@@ -62,6 +64,21 @@ fn left() -> impl Scene {
 			@LoginFormComponent Node {
 				margin: { UiRect::left(px(48)).with_bottom(px(160)) }
 			},
+		]
+	}
+}
+
+fn middle() -> impl Scene {
+	bsn! {
+		Name::new("Middle")
+		Node {
+			width: percent(60),
+			height: percent(100),
+			justify_content: JustifyContent::Center,
+			align_items: AlignItems::Center,
+		}
+		Children [
+			@MainMenuComponent
 		]
 	}
 }

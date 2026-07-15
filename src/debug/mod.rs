@@ -15,6 +15,7 @@ impl Plugin for DebugPlugin {
 struct UiBorderDebug;
 
 #[derive(Resource, Reflect)]
+#[reflect(Resource)]
 struct UiBorderDebugColor(Color);
 
 impl UiBorderDebug {

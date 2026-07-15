@@ -1,11 +1,14 @@
 mod debug;
 mod game;
 mod ui;
+mod util;
 
 use crate::{debug::DebugPlugin, ui::UiPlugin};
 use beditor::prelude::*;
 use bevy::prelude::*;
 use bevy_defer::AsyncPlugin;
+use bevy_prng::WyRand;
+use bevy_rand::plugin::EntropyPlugin;
 use bevy_svg::SvgPlugin;
 use mimalloc::MiMalloc;
 
@@ -22,7 +25,11 @@ fn main() {
 	}
 
 	app
-		.add_plugins((AsyncPlugin::default_settings(), SvgPlugin))
+		.add_plugins((
+			AsyncPlugin::default_settings(),
+			SvgPlugin,
+			EntropyPlugin::<WyRand>::default(),
+		))
 		.insert_resource(ClearColor(Color::srgb_u8(0xff, 0xd5, 0x9d)))
 		.insert_state(GameState::Startup)
 		.add_systems(Startup, (static_entities.spawn(), init))
