@@ -79,3 +79,15 @@ impl FruitImage {
 		}
 	}
 }
+
+fn column(children: impl SceneList) -> impl Scene {
+	bsn! {
+		Node {
+			display: Display::Flex,
+			flex_direction: FlexDirection::Column,
+		}
+		Children [
+			{children}
+		]
+	}
+}

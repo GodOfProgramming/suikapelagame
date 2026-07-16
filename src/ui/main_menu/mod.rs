@@ -1,5 +1,9 @@
 use crate::{GameState, component_name, ui::components::FruitImage};
-use bevy::prelude::*;
+use bevy::{
+	color::palettes::tailwind::ORANGE_500,
+	prelude::*,
+	window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
+};
 use bevy_svg::prelude::*;
 use rand::Rng;
 
@@ -24,6 +28,8 @@ impl MainMenuComponent {
 			Node {
 				width: percent(100),
 				height: percent(100),
+				display: Display::Flex,
+				flex_direction: FlexDirection::Column,
 				justify_content: JustifyContent::Center,
 				align_items: AlignItems::Center,
 			}
@@ -32,6 +38,7 @@ impl MainMenuComponent {
 				@BlenderComponent Node {
 					margin: { UiRect::top(px(128)) }
 				},
+				@StartButton,
 			]
 		}
 	}
@@ -138,6 +145,37 @@ impl SpinningFruitComponent {
 					@degrees: 150.0,
 				},
 			]
+		}
+	}
+}
+
+#[derive(SceneComponent, Default, Clone)]
+struct StartButton;
+
+impl StartButton {
+	fn scene() -> impl Scene {
+		bsn! {
+			Button
+			BackgroundColor(ORANGE_500)
+			Node {
+				justify_content: JustifyContent::Center,
+				align_items: AlignItems::Center,
+				border_radius: BorderRadius::all(px(16)),
+				aspect_ratio: {Some(6.0 / 1.0)},
+				width: px(300),
+			}
+			Children [
+				Text("Start") TextFont { weight: FontWeight(900), font_size: FontSize::Px(32.0) }
+			]
+			on(|_event: On<Pointer<Click>>, mut game_state: ResMut<NextState<GameState>>| {
+				game_state.set(GameState::InGame);
+			})
+			on(|_event: On<Pointer<Enter>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>| {
+				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::Pointer));
+			})
+			on(|_event: On<Pointer<Leave>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>| {
+				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::default()));
+			})
 		}
 	}
 }

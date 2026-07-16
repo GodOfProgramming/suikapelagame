@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use super::AppEditableText;
 use crate::{
 	GameState, component_name,
@@ -38,21 +40,26 @@ fn login_form() -> impl Scene {
 			justify_content: JustifyContent::End,
 		}
 		Children [
-			host_input(),
-			port_input(),
-			name_input(),
-			password_input(),
-			login_button(),
+			@FormInput<HostInput> {
+				@label: "Host",
+				@placeholder: DEFAULT_HOST,
+			},
+			@FormInput<PortInput> {
+				@label: "Port",
+				@placeholder: DEFAULT_PORT,
+			},
+			@FormInput<NameInput> {
+				@label: "Name",
+			},
+			@FormInput<PasswordInput> {
+				@label: "Password",
+			},
+			Button BackgroundColor({SLATE_500})
+			Node { justify_content: JustifyContent::Center }
+			Children [ Text::new("Login") TextColor::BLACK ]
+			on(on_login_click)
 		]
 	}
-}
-
-#[derive(SystemParam)]
-struct FormData<'w, 's> {
-	host: Single<'w, 's, &'static EditableText, With<HostInput>>,
-	port: Single<'w, 's, &'static EditableText, With<PortInput>>,
-	name: Single<'w, 's, &'static EditableText, With<NameInput>>,
-	pass: Single<'w, 's, &'static EditableText, With<PasswordInput>>,
 }
 
 const DEFAULT_HOST: &str = if cfg!(debug_assertions) {
@@ -67,78 +74,49 @@ const DEFAULT_PORT: &str = if cfg!(debug_assertions) { "38281" } else { "" };
 #[require(EditableText::new("archipelago.gg"))]
 struct HostInput;
 
-fn host_input() -> impl Scene {
-	bsn! {
-		column()
-		Children [
-			label_text("Host"),
-			HostInput @AppEditableText {
-				@name: "Host Input",
-				@placeholder_text: DEFAULT_HOST,
-			}
-		]
-	}
-}
-
 #[derive(Component, Default, Clone)]
 struct PortInput;
 
-fn port_input() -> impl Scene {
-	bsn! {
-		column()
-		Children [
-			label_text("Port"),
-			PortInput @AppEditableText {
-				@name: "Port Input",
-				@placeholder_text: DEFAULT_PORT
-			}
-		]
-	}
-}
-
 #[derive(Component, Default, Clone)]
 struct NameInput;
-
-fn name_input() -> impl Scene {
-	bsn! {
-		column()
-		Children [
-			label_text("Name"),
-			NameInput @AppEditableText {
-				@name: "Name Input"
-			}
-		]
-	}
-}
 
 #[derive(Component, Default, Clone)]
 #[require(EditableText)]
 struct PasswordInput;
 
-fn password_input() -> impl Scene {
-	bsn! {
-		column()
-		Children [
-			label_text("Password"),
-			PasswordInput @AppEditableText {
-				@name: "Password Input"
+#[derive(SceneComponent, Default, Clone)]
+#[scene(FormInputProps<C>)]
+struct FormInput<C: Component + Default + Clone + Unpin>(PhantomData<C>);
+
+#[derive(Default)]
+struct FormInputProps<C> {
+	component: C,
+	label: String,
+	placeholder: String,
+}
+
+impl<C> FormInput<C>
+where
+	C: Component + Default + Clone + Unpin,
+{
+	fn scene(props: FormInputProps<C>) -> impl Scene {
+		super::column(bsn_list! [
+			Label TextColor::BLACK Text({props.label.clone()}),
+			template_value(props.component)
+			@AppEditableText {
+				@name: {props.label},
+				@placeholder_text: {props.placeholder},
 			}
-		]
+		])
 	}
 }
 
-fn login_button() -> impl Scene {
-	bsn! {
-		Button
-		BackgroundColor({SLATE_500})
-		Node {
-			justify_content: JustifyContent::Center
-		}
-		Children [
-			Text::new("Login") TextColor::BLACK
-		]
-		on(on_login_click)
-	}
+#[derive(SystemParam)]
+struct FormData<'w, 's> {
+	host: Single<'w, 's, &'static EditableText, With<HostInput>>,
+	port: Single<'w, 's, &'static EditableText, With<PortInput>>,
+	name: Single<'w, 's, &'static EditableText, With<NameInput>>,
+	pass: Single<'w, 's, &'static EditableText, With<PasswordInput>>,
 }
 
 fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData) -> Result {
@@ -196,22 +174,4 @@ fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData)
 	});
 
 	Ok(())
-}
-
-fn column() -> impl Scene {
-	bsn! {
-		Node {
-			display: Display::Flex,
-			flex_direction: FlexDirection::Column,
-		}
-	}
-}
-
-fn label_text(txt: impl Into<String>) -> impl Scene {
-	let txt = Text::new(txt);
-	bsn! {
-		Label
-		TextColor::BLACK
-		template_value(txt)
-	}
 }
