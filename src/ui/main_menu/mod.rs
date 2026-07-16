@@ -1,11 +1,15 @@
 use crate::{GameState, component_name, ui::components::FruitImage};
 use bevy::{
+	camera::{ImageRenderTarget, RenderTarget, visibility::RenderLayers},
 	color::palettes::tailwind::ORANGE_500,
 	prelude::*,
+	render::render_resource::TextureFormat,
 	window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use bevy_svg::prelude::*;
 use rand::Rng;
+
+const TITLE_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
 
 pub struct MainMenuPlugin;
 
@@ -25,6 +29,7 @@ impl MainMenuComponent {
 	fn scene() -> impl Scene {
 		bsn! {
 			{ component_name!(MainMenuComponent) }
+			Transform Visibility
 			Node {
 				width: percent(100),
 				height: percent(100),
@@ -35,10 +40,8 @@ impl MainMenuComponent {
 			}
 			Children [
 				@TitleComponent,
-				@BlenderComponent Node {
-					margin: { UiRect::top(px(128)) }
-				},
-				@StartButton,
+				@BlenderComponent,
+				@StartButtonComponent,
 			]
 		}
 	}
@@ -51,8 +54,33 @@ impl TitleComponent {
 	fn scene() -> impl Scene {
 		bsn! {
 			{ component_name!(TitleComponent) }
-			Svg2d("title.svg")
-			Origin::Custom({(0.5, 3.6)})
+			Node {
+				width: percent(100),
+			}
+			Transform Visibility
+			on(|event: On<Add, Self>, mut commands: Commands, asset_server: Res<AssetServer>, mut images: ResMut<Assets<Image>>| {
+				let image = Image::new_target_texture(1200, 200, TextureFormat::Rgba8UnormSrgb, None);
+				let image_handle = images.add(image);
+
+				commands.entity(event.event_target())
+				.insert(ImageNode::new(image_handle.clone()))
+				.with_children(|commands| {
+					commands.spawn((
+						Camera2d,
+						TITLE_RENDER_LAYER,
+						RenderTarget::Image(ImageRenderTarget {
+							handle: image_handle,
+							scale_factor: 1.0,
+						})
+					));
+
+					commands.spawn((
+						Svg2d(asset_server.load("title.svg")),
+						Origin::Center,
+						TITLE_RENDER_LAYER
+					));
+				});
+			})
 		}
 	}
 }
@@ -150,9 +178,9 @@ impl SpinningFruitComponent {
 }
 
 #[derive(SceneComponent, Default, Clone)]
-struct StartButton;
+struct StartButtonComponent;
 
-impl StartButton {
+impl StartButtonComponent {
 	fn scene() -> impl Scene {
 		bsn! {
 			Button

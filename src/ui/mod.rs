@@ -20,13 +20,19 @@ impl Plugin for UiPlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.add_plugins(MainMenuPlugin)
-			.add_systems(Startup, template.spawn());
+			.add_systems(Startup, GameUi::scene.spawn());
 	}
 }
 
-fn template() -> impl Scene {
-	bsn! {
+#[derive(Component, Default, Clone)]
+struct GameUi;
+
+impl GameUi {
+	fn scene() -> impl Scene {
+		bsn! {
+			GameUi
 			Name::new("Ui Root")
+			Transform Visibility
 			Node {
 				display: Display::Flex,
 				flex_direction: FlexDirection::Row,
@@ -40,9 +46,10 @@ fn template() -> impl Scene {
 				middle(),
 				right(),
 			]
-			on(|event: On<Add, Node>, mut commands: Commands, game_camera: Single<Entity, With<GameCamera>>| {
+			on(|event: On<Add, Self>, mut commands: Commands, game_camera: Single<Entity, With<GameCamera>>| {
 				commands.entity(event.event_target()).insert(UiTargetCamera(*game_camera));
 			})
+		}
 	}
 }
 
@@ -71,6 +78,7 @@ fn left() -> impl Scene {
 fn middle() -> impl Scene {
 	bsn! {
 		Name::new("Middle")
+		Transform Visibility
 		Node {
 			width: percent(60),
 			height: percent(100),
