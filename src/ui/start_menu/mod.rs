@@ -9,26 +9,24 @@ use bevy::{
 use bevy_svg::prelude::*;
 use rand::Rng;
 
-const TITLE_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
+const TITLE_RENDER_LAYER: RenderLayers = RenderLayers::layer(2);
 
 pub struct MainMenuPlugin;
 
 impl Plugin for MainMenuPlugin {
 	fn build(&self, app: &mut App) {
-		app
-			.add_systems(OnExit(GameState::MainMenu), on_exit)
-			.add_systems(Update, rotate_fruits);
+		app.add_systems(Update, rotate_fruits);
 	}
 }
 
 #[derive(SceneComponent, Default, Clone)]
 #[require(Transform, Visibility)]
-pub struct MainMenuComponent;
+pub struct StartMenuComponent;
 
-impl MainMenuComponent {
+impl StartMenuComponent {
 	fn scene() -> impl Scene {
 		bsn! {
-			{ component_name!(MainMenuComponent) }
+			{ component_name!(StartMenuComponent) }
 			Transform Visibility
 			Node {
 				width: percent(100),
@@ -195,8 +193,9 @@ impl StartButtonComponent {
 			Children [
 				Text("Start") TextFont { weight: FontWeight(900), font_size: FontSize::Px(32.0) }
 			]
-			on(|_event: On<Pointer<Click>>, mut game_state: ResMut<NextState<GameState>>| {
-				game_state.set(GameState::InGame);
+			on(|_event: On<Pointer<Click>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>, mut game_state: ResMut<NextState<GameState>>| {
+				game_state.set(GameState::InitGameplay);
+				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::default()));
 			})
 			on(|_event: On<Pointer<Enter>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>| {
 				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::Pointer));
@@ -205,12 +204,6 @@ impl StartButtonComponent {
 				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::default()));
 			})
 		}
-	}
-}
-
-fn on_exit(mut commands: Commands, q_main_menu: Query<Entity, With<MainMenuComponent>>) {
-	for entity in q_main_menu {
-		commands.entity(entity).despawn();
 	}
 }
 

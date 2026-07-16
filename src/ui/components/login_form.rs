@@ -162,7 +162,6 @@ fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData)
 				);
 
 				AsyncWorld.insert_resource(ApClient::new(client));
-				AsyncWorld.set_state(GameState::InGame)?;
 
 				Ok(())
 			}
