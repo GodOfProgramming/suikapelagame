@@ -187,7 +187,7 @@ fn init_game_view(
 				scale_factor: 1.0,
 			}),
 			Projection::Orthographic(OrthographicProjection {
-				scale: 2.5,
+				scale: 4.0,
 				..OrthographicProjection::default_2d()
 			}),
 		));
@@ -196,7 +196,6 @@ fn init_game_view(
 			ImageNode::new(image_handle.clone()),
 			Node {
 				width: percent(100),
-				height: percent(100),
 				..default()
 			},
 		)));
