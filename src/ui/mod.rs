@@ -3,14 +3,18 @@ pub mod start_menu;
 
 use crate::{
 	GameCamera, GameState,
-	game::{ApClient, GAME_RENDER_LAYER, LEVEL_DIM},
-	ui::start_menu::MainMenuPlugin,
+	game::{ApClient, DropPlaceholder, LEVEL_DIM, MovePlaceholder},
+	ui::{
+		components::{next_fruit::NextFruitPlugin, score::ScorePlugin},
+		start_menu::MainMenuPlugin,
+	},
 	util::events::{send_event, send_event_on},
 };
 use bevy::{
 	camera::{ImageRenderTarget, RenderTarget},
 	prelude::*,
 	render::render_resource::TextureFormat,
+	ui_widgets::observe,
 };
 use components::{FruitCircleComponent, LoginFormComponent, NextFruitComponent, ScoreComponent};
 use nameof::name_of;
@@ -31,7 +35,7 @@ impl Plugin for UiPlugin {
 		app
 			.add_observer(DisableLogin::handler)
 			.add_observer(send_event_on::<Add, ApClient>(DisableLogin))
-			.add_plugins(MainMenuPlugin)
+			.add_plugins((MainMenuPlugin, NextFruitPlugin, ScorePlugin))
 			.add_systems(Startup, GameUi::scene.spawn())
 			.add_systems(
 				OnExit(GameState::MainMenu),
@@ -164,8 +168,11 @@ fn clear_center(
 	}
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct GameViewCamera;
+
+#[derive(Component)]
+struct GameView;
 
 fn init_game_view(
 	mut commands: Commands,
@@ -179,25 +186,44 @@ fn init_game_view(
 
 		commands.spawn((
 			Name::new(name_of!(GameViewCamera)),
+			Camera {
+				clear_color: ClearColorConfig::Custom(Color::srgb_u8(0xff, 0xdc, 0xae)),
+				..default()
+			},
 			Camera2d,
 			GameViewCamera,
-			GAME_RENDER_LAYER,
 			RenderTarget::Image(ImageRenderTarget {
 				handle: image_handle.clone(),
 				scale_factor: 1.0,
 			}),
-			Projection::Orthographic(OrthographicProjection {
-				scale: 4.0,
-				..OrthographicProjection::default_2d()
-			}),
+			Projection::Orthographic(OrthographicProjection::default_2d()),
 		));
 
-		commands.entity(mc).insert(Children::spawn_one((
-			ImageNode::new(image_handle.clone()),
+		commands.entity(mc).insert((
 			Node {
 				width: percent(100),
+				align_items: AlignItems::Center,
+				justify_content: JustifyContent::Center,
 				..default()
 			},
-		)));
+			Children::spawn_one((
+				GameView,
+				ImageNode::new(image_handle.clone()),
+				Node {
+					width: percent(60),
+					..default()
+				},
+				observe(|event: On<Pointer<Move>>, mut commands: Commands| {
+					let Some(cursor) = event.hit.position else {
+						return;
+					};
+
+					let pos = cursor.xy().with_y(-cursor.y);
+
+					commands.trigger(MovePlaceholder(pos * LEVEL_DIM));
+				}),
+				observe(send_event_on::<Pointer<Click>, ()>(DropPlaceholder)),
+			)),
+		));
 	}
 }

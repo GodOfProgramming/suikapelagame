@@ -1,6 +1,23 @@
 use bevy::prelude::*;
 
-use crate::component_name;
+use crate::{component_name, game::Score};
+
+pub struct ScorePlugin;
+
+impl Plugin for ScorePlugin {
+	fn build(&self, app: &mut App) {
+		app.add_systems(Update, update_score.run_if(resource_changed::<Score>));
+	}
+}
+
+fn update_score(score: Res<Score>, q_text: Query<&mut Text, With<ScoreText>>) {
+	for mut txt in q_text {
+		txt.0 = score.to_string();
+	}
+}
+
+#[derive(Component, Default, Clone)]
+struct ScoreText;
 
 #[derive(SceneComponent, Default, Clone)]
 pub struct ScoreComponent;
@@ -33,6 +50,7 @@ fn title() -> impl Scene {
 fn score() -> impl Scene {
 	bsn! {
 		Text("0")
+		ScoreText
 		TextFont {
 			weight: FontWeight(900)
 			font_size: FontSize::Px(84.0),

@@ -5,7 +5,10 @@ mod util;
 #[cfg(feature = "dev")]
 mod debug;
 
-use crate::{game::GamePlugin, ui::UiPlugin};
+use crate::{
+	game::{GAME_RENDER_LAYER, GamePlugin},
+	ui::UiPlugin,
+};
 use avian2d::PhysicsPlugins;
 use bevy::prelude::*;
 use bevy_defer::AsyncPlugin;
@@ -71,5 +74,6 @@ struct GameCamera;
 fn static_entities() -> impl SceneList {
 	bsn_list! {
 		GameCamera
+		template_value(GAME_RENDER_LAYER)
 	}
 }
