@@ -1,11 +1,11 @@
 use std::{f32::consts::TAU, sync::LazyLock};
 
-use crate::{GameState, component_name};
+use crate::{GameState, component_name, ui::RENDER_SCALE};
 use archipelago_rs::Client;
 use avian2d::prelude::*;
 use bevy::{
 	camera::visibility::RenderLayers,
-	ecs::{bundle::InsertMode, entity, system::entity_command::insert},
+	ecs::{bundle::InsertMode, system::entity_command::insert},
 	prelude::*,
 };
 use bevy_prng::WyRand;
@@ -20,12 +20,8 @@ use validator::Validate;
 
 pub const GAME_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
 
-pub const LEVEL_DIM: Vec2 = Vec2::new(1200.0, 3600.0);
 pub const WALL_PAD: f32 = 32.0;
-const WORLD_DIM: Vec2 = Vec2 {
-	x: LEVEL_DIM.x / 4.0,
-	y: LEVEL_DIM.y / 4.0,
-};
+pub const WORLD_DIM: Vec2 = Vec2 { x: 480.0, y: 720.0 };
 
 pub struct GamePlugin;
 
@@ -86,12 +82,29 @@ fn move_placeholder_location(
 #[derive(Resource)]
 struct StaticAssets {
 	pop: Handle<Image>,
+	click: Handle<AudioSource>,
+	fruit_pops: EnumMap<Fruit, Handle<AudioSource>>,
 }
 
 impl FromWorld for StaticAssets {
 	fn from_world(world: &mut World) -> Self {
-		let pop = world.load_asset("binary/pop.png");
-		Self { pop }
+		Self {
+			pop: world.load_asset("binary/pop.png"),
+			click: world.load_asset("binary/audio/click.mp3"),
+			fruit_pops: enum_map! {
+				Fruit::Cherry => world.load_asset("binary/audio/cherry.mp3"),
+				Fruit::Strawberry => world.load_asset("binary/audio/strawberry.mp3"),
+				Fruit::Grapes => world.load_asset("binary/audio/grape.mp3"),
+				Fruit::Dekopon => world.load_asset("binary/audio/dekopon.mp3"),
+				Fruit::Persimmon => world.load_asset("binary/audio/persimmon.mp3"),
+				Fruit::Apple => world.load_asset("binary/audio/apple.mp3"),
+				Fruit::Pear => world.load_asset("binary/audio/pear.mp3"),
+				Fruit::Peach => world.load_asset("binary/audio/peach.mp3"),
+				Fruit::Pineapple => world.load_asset("binary/audio/pineapple.mp3"),
+				Fruit::Melon => world.load_asset("binary/audio/melon.mp3"),
+				Fruit::Watermelon => world.load_asset("binary/audio/watermelon.mp3"),
+			},
+		}
 	}
 }
 
@@ -102,16 +115,21 @@ fn on_collisions(
 	mut rng: Single<&mut WyRand, With<GlobalRng>>,
 	static_assets: Res<StaticAssets>,
 	mut score: ResMut<Score>,
+	q_is_placeholder: Query<(), With<PlaceholderFruit>>,
 ) {
 	for msg in messages.read() {
+		if q_is_placeholder.contains(msg.collider1) || q_is_placeholder.contains(msg.collider2) {
+			continue;
+		}
+
 		let [Some((fruit_a, tf_a)), Some((fruit_b, tf_b))] =
 			[msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
 		else {
-			return;
+			continue;
 		};
 
 		if fruit_a != fruit_b {
-			return;
+			continue;
 		}
 
 		let middle = (tf_a.translation + tf_b.translation) / 2.0;
@@ -137,6 +155,11 @@ fn on_collisions(
 			.entity(pop_entity)
 			.try_despawn();
 
+		commands.spawn((
+			AudioPlayer::new(static_assets.fruit_pops[*fruit_a].clone()),
+			PlaybackSettings::DESPAWN,
+		));
+
 		if let Some(fruit) = fruit_a.next() {
 			commands.queue_spawn_scene(bsn! {
 				@FruitBody {
@@ -156,7 +179,7 @@ fn on_collisions(
 }
 
 fn level() -> impl Scene {
-	const SIDE_POS: f32 = LEVEL_DIM.x / 2.0 + WALL_PAD / 2.0;
+	const SIDE_POS: f32 = WORLD_DIM.x / 2.0 + WALL_PAD / 2.0;
 
 	bsn! {
 		Name::new("Level")
@@ -188,10 +211,10 @@ fn level() -> impl Scene {
 				@name: "Bottom",
 				@location: Vec2 {
 					x: 0.0,
-					y: { -( WORLD_DIM.y / 2.0 + WALL_PAD / 2.0 ) },
+					y: { -( WORLD_DIM.y / 2.0 - WALL_PAD / 2.0 ) },
 				},
 				@size: Vec2 {
-					x:  { LEVEL_DIM.x + WALL_PAD * 2.0 },
+					x:  { WORLD_DIM.x + WALL_PAD * 2.0 },
 					y:  WALL_PAD
 				}
 			}
@@ -221,8 +244,8 @@ impl AreaBound {
 				color: WALL_COLOR,
 			}
 			Transform {
-				translation: { Vec3::from((props.location, 1.0)) },
-				scale: { Vec3::from((props.size, 1.0)) }
+				translation: { Vec3::from((props.location * RENDER_SCALE, 1.0)) },
+				scale: { Vec3::from((props.size * RENDER_SCALE, 1.0)) }
 			}
 		}
 	}
@@ -366,12 +389,18 @@ impl DropPlaceholder {
 		q_placeholders: Query<Entity, With<PlaceholderFruit>>,
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
 		mut next_fruit: ResMut<NextFruit>,
+		static_assets: Res<StaticAssets>,
 	) {
-		for fruit in q_placeholders {
+		for entity in q_placeholders {
 			commands
-				.entity(fruit)
+				.entity(entity)
 				.remove::<PlaceholderFruit>()
 				.insert((RigidBody::Dynamic, LinearVelocity(Vec2::new(0.0, -128.0))));
+
+			commands.spawn((
+				AudioPlayer::new(static_assets.click.clone()),
+				PlaybackSettings::DESPAWN,
+			));
 		}
 
 		let fruit = next_fruit.next(&mut rng);
@@ -397,10 +426,16 @@ struct PlaceholderFruitProps {
 
 impl PlaceholderFruit {
 	fn scene(props: PlaceholderFruitProps) -> impl Scene {
+		let max_fruit_size = Fruit::VARIANTS
+			.iter()
+			.max_by_key(|f| f.radius() as u32)
+			.map(|f| f.radius())
+			.unwrap_or(128.0);
+
 		bsn! {
 			@FruitBody {
 				@fruit: { props.fruit },
-				@position: { Vec2::new(props.x, WORLD_DIM.y / 2.0 - WALL_PAD) },
+				@position: { Vec2::new(props.x, WORLD_DIM.y * 2.0 - max_fruit_size ) },
 			}
 			{ component_name!(PlaceholderFruit) }
 		}
@@ -436,6 +471,7 @@ impl FruitBody {
 			}
 			Transform {
 				translation: { Vec3::from((props.position, 1.0)) },
+				scale: Vec3::from((Vec2::splat(RENDER_SCALE), 1.0)),
 			}
 		}
 	}

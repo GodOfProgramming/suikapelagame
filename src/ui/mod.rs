@@ -3,7 +3,7 @@ pub mod start_menu;
 
 use crate::{
 	GameCamera, GameState,
-	game::{ApClient, DropPlaceholder, LEVEL_DIM, MovePlaceholder},
+	game::{ApClient, DropPlaceholder, MovePlaceholder, WORLD_DIM},
 	ui::{
 		components::{next_fruit::NextFruitPlugin, score::ScorePlugin},
 		start_menu::MainMenuPlugin,
@@ -27,6 +27,8 @@ macro_rules! component_name {
 		bevy::scene::template_value(bevy::ecs::name::Name::new(stringify!($name)))
 	}};
 }
+
+pub const RENDER_SCALE: f32 = 4.0;
 
 pub struct UiPlugin;
 
@@ -179,7 +181,7 @@ fn init_game_view(
 	mut images: ResMut<Assets<Image>>,
 	q_middle_components: Query<Entity, With<MiddleComponent>>,
 ) {
-	let dim = LEVEL_DIM.as_uvec2();
+	let dim = WORLD_DIM.as_uvec2() * RENDER_SCALE as u32;
 	for mc in q_middle_components {
 		let image = Image::new_target_texture(dim.x, dim.y, TextureFormat::Rgba8UnormSrgb, None);
 		let image_handle = images.add(image);
@@ -199,31 +201,36 @@ fn init_game_view(
 			Projection::Orthographic(OrthographicProjection::default_2d()),
 		));
 
-		commands.entity(mc).insert((
-			Node {
-				width: percent(100),
-				align_items: AlignItems::Center,
-				justify_content: JustifyContent::Center,
-				..default()
-			},
-			Children::spawn_one((
+		commands.entity(mc).with_children(|commands| {
+			commands.spawn((
 				GameView,
 				ImageNode::new(image_handle.clone()),
 				Node {
 					width: percent(60),
+					max_height: vh(100),
 					..default()
 				},
-				observe(|event: On<Pointer<Move>>, mut commands: Commands| {
-					let Some(cursor) = event.hit.position else {
-						return;
-					};
+				observe(
+					|event: On<Pointer<Move>>,
+					 mut commands: Commands,
+					 projection: Single<&Projection, With<GameViewCamera>>| {
+						let Some(cursor) = event.hit.position else {
+							return;
+						};
 
-					let pos = cursor.xy().with_y(-cursor.y);
+						let Projection::Orthographic(ortho) = *projection else {
+							return;
+						};
 
-					commands.trigger(MovePlaceholder(pos * LEVEL_DIM));
-				}),
+						let pos = cursor.xy().with_y(-cursor.y);
+
+						commands.trigger(MovePlaceholder(
+							pos * WORLD_DIM * ortho.scale * RENDER_SCALE,
+						));
+					},
+				),
 				observe(send_event_on::<Pointer<Click>, ()>(DropPlaceholder)),
-			)),
-		));
+			));
+		});
 	}
 }

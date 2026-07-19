@@ -8,7 +8,7 @@ anyhow = "1.0"
 archipelago_rs = "3.0.1"
 avian2d = "0.7.0"
 beditor = { path = "../beditor", optional = true }
-bevy = { version = "0.19.0", features = ["system_clipboard"] }
+bevy = { version = "0.19.0", features = ["system_clipboard", "mp3"] }
 bevy_defer = "0.18.0"
 bevy_prng = { version = "0.15", features = ["chacha20", "wyrand"] }
 bevy_rand = "0.15"
