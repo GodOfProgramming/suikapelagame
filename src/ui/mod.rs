@@ -208,25 +208,37 @@ fn init_game_view(
 				Node {
 					width: percent(60),
 					max_height: vh(100),
+					aspect_ratio: Some(WORLD_DIM.x / WORLD_DIM.y),
 					..default()
 				},
 				observe(
 					|event: On<Pointer<Move>>,
 					 mut commands: Commands,
-					 projection: Single<&Projection, With<GameViewCamera>>| {
+					 camera: Single<(&Projection, &RenderTarget), With<GameViewCamera>>,
+					 images: Res<Assets<Image>>| {
 						let Some(cursor) = event.hit.position else {
 							return;
 						};
 
-						let Projection::Orthographic(ortho) = *projection else {
+						let (projection, render_target) = *camera;
+
+						let Projection::Orthographic(ortho) = projection else {
+							return;
+						};
+
+						let Some(image_handle) = render_target.as_image() else {
+							return;
+						};
+
+						let Some(image) = images.get(image_handle.id()) else {
 							return;
 						};
 
 						let pos = cursor.xy().with_y(-cursor.y);
 
-						commands.trigger(MovePlaceholder(
-							pos * WORLD_DIM * ortho.scale * RENDER_SCALE,
-						));
+						let world_pos = pos * ortho.scale * image.size().as_vec2();
+
+						commands.trigger(MovePlaceholder(world_pos));
 					},
 				),
 				observe(send_event_on::<Pointer<Click>, ()>(DropPlaceholder)),

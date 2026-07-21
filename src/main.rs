@@ -9,7 +9,13 @@ use crate::{
 	game::{GAME_RENDER_LAYER, GamePlugin},
 	ui::UiPlugin,
 };
-use avian2d::PhysicsPlugins;
+use avian2d::{
+	PhysicsPlugins,
+	dynamics::{
+		integrator::Gravity,
+		solver::{SolverConfig, schedule::SubstepCount},
+	},
+};
 use bevy::prelude::*;
 use bevy_defer::AsyncPlugin;
 use bevy_prng::WyRand;
@@ -38,7 +44,6 @@ fn main() {
 	{
 		app.add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()));
 	}
-
 	app
 		.add_plugins((
 			AsyncPlugin::default_settings(),
@@ -47,6 +52,14 @@ fn main() {
 			SvgPlugin,
 		))
 		.insert_resource(ClearColor(Color::srgb_u8(0xff, 0xd5, 0x9d)))
+		.insert_resource(Gravity(Vec2::NEG_Y * 2000.0))
+		.insert_resource(SubstepCount(12))
+		.insert_resource(SolverConfig {
+			contact_damping_ratio: 100.0,
+			restitution_iterations: 8,
+			max_overlap_solve_speed: 1000.0,
+			..default()
+		})
 		.insert_state(GameState::MainMenu)
 		.add_systems(Startup, static_entities.spawn())
 		.add_plugins((UiPlugin, GamePlugin))

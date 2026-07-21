@@ -35,6 +35,8 @@ impl Plugin for GamePlugin {
 			.add_observer(archipelago_error_handler)
 			.add_observer(on_make_placeholder)
 			.add_observer(on_remove_placeholder)
+			.add_observer(on_new_fruit_body)
+			.add_observer(SpawnFruit::handle)
 			.add_observer(MovePlaceholder::handle)
 			.add_observer(DropPlaceholder::handle)
 			.add_systems(OnEnter(GameState::InitGameplay), (level.spawn(), init_game))
@@ -161,14 +163,7 @@ fn on_collisions(
 		));
 
 		if let Some(fruit) = fruit_a.next() {
-			commands.queue_spawn_scene(bsn! {
-				@FruitBody {
-					@fruit: fruit,
-					@position: { middle.xy() },
-				}
-				template_value(RigidBody::Dynamic)
-				CollisionEventsEnabled
-			});
+			commands.trigger(SpawnFruit(fruit, middle.xy()));
 		}
 
 		*score += *fruit_a;
@@ -386,22 +381,20 @@ impl DropPlaceholder {
 	fn handle(
 		_: On<Self>,
 		mut commands: Commands,
-		q_placeholders: Query<Entity, With<PlaceholderFruit>>,
+		placeholder: Single<Entity, With<PlaceholderFruit>>,
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
 		mut next_fruit: ResMut<NextFruit>,
 		static_assets: Res<StaticAssets>,
 	) {
-		for entity in q_placeholders {
-			commands
-				.entity(entity)
-				.remove::<PlaceholderFruit>()
-				.insert((RigidBody::Dynamic, LinearVelocity(Vec2::new(0.0, -128.0))));
+		commands
+			.entity(*placeholder)
+			.remove::<PlaceholderFruit>()
+			.insert((RigidBody::Dynamic, LinearVelocity(Vec2::new(0.0, -128.0))));
 
-			commands.spawn((
-				AudioPlayer::new(static_assets.click.clone()),
-				PlaybackSettings::DESPAWN,
-			));
-		}
+		commands.spawn((
+			AudioPlayer::new(static_assets.click.clone()),
+			PlaybackSettings::DESPAWN,
+		));
 
 		let fruit = next_fruit.next(&mut rng);
 
@@ -458,12 +451,13 @@ impl FruitBody {
 			Name::new(props.fruit.to_string())
 			Collider::circle(props.fruit.radius())
 			template_value(props.fruit)
+			Mass({props.fruit.radius()})
 			Restitution {
 				coefficient: 0.1,
 			}
 			Friction {
-				dynamic_coefficient: 0.006,
-				static_coefficient: 0.006,
+				dynamic_coefficient: 0.06,
+				static_coefficient: 0.06,
 			}
 			Sprite {
 				image: { props.fruit.sprite() },
@@ -473,6 +467,7 @@ impl FruitBody {
 				translation: { Vec3::from((props.position, 1.0)) },
 				scale: Vec3::from((Vec2::splat(RENDER_SCALE), 1.0)),
 			}
+			SweptCcd
 		}
 	}
 }
@@ -629,5 +624,27 @@ impl Fruit {
 
 	pub fn next(self) -> Option<Self> {
 		enum_iterator::next(&self)
+	}
+}
+
+fn on_new_fruit_body(event: On<Add, FruitBody>, mut commands: Commands) {
+	commands
+		.entity(event.event_target())
+		.insert(SpeculativeMargin(4.0));
+}
+
+#[derive(Event)]
+struct SpawnFruit(Fruit, Vec2);
+
+impl SpawnFruit {
+	fn handle(event: On<Self>, mut commands: Commands) {
+		commands.spawn_scene(bsn! {
+			@FruitBody {
+				@fruit: {event.0},
+				@position: { event.1 },
+			}
+			template_value(RigidBody::Dynamic)
+			CollisionEventsEnabled
+		});
 	}
 }
