@@ -2,13 +2,11 @@ use std::marker::PhantomData;
 
 use super::AppEditableText;
 use crate::{
-	GameState, component_name,
+	component_name,
 	game::{ApClient, SessionData},
+	ui::components::AppButton,
 };
-use bevy::{
-	color::palettes::tailwind::SLATE_500, ecs::system::SystemParam, prelude::*, text::EditableText,
-	ui::FlexDirection,
-};
+use bevy::{ecs::system::SystemParam, prelude::*, text::EditableText, ui::FlexDirection};
 use bevy_defer::{AsyncCommandsExtension, AsyncWorld};
 
 #[derive(SceneComponent, Default, Clone)]
@@ -54,7 +52,7 @@ fn login_form() -> impl Scene {
 			@FormInput<PasswordInput> {
 				@label: "Password",
 			},
-			Button BackgroundColor({SLATE_500})
+			@AppButton
 			Node { justify_content: JustifyContent::Center }
 			Children [ Text::new("Login") TextColor::BLACK ]
 			on(on_login_click)

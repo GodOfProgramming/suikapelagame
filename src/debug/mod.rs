@@ -1,6 +1,9 @@
 use avian2d::debug_render::{PhysicsDebugPlugin, PhysicsGizmos};
 use beditor::{EditorExtension, EditorExtensionPlugin, EditorUi, prelude::uuid};
 use bevy::{color::palettes::tailwind::RED_500, ecs::system::SystemParam, prelude::*};
+use strum::IntoEnumIterator;
+
+use crate::GameState;
 
 pub struct DebugPlugin;
 
@@ -31,6 +34,8 @@ struct DebugUi;
 #[derive(SystemParam)]
 struct DebugUiParams<'w> {
 	store: ResMut<'w, GizmoConfigStore>,
+	game_state: Res<'w, State<GameState>>,
+	next_game_state: ResMut<'w, NextState<GameState>>,
 }
 
 impl EditorUi for DebugUi {
@@ -49,6 +54,20 @@ impl EditorUi for DebugUi {
 	fn ui(&mut self, ui: &mut beditor::prelude::egui::Ui, mut params: Self::Params<'_, '_>) {
 		let value = &mut params.store.config_mut::<PhysicsGizmos>().0.enabled;
 		ui.checkbox(value, "Show Physics Colliders");
+
+		ui.separator();
+
+		ui.heading("Game State");
+
+		let mut mut_state = *params.game_state.get();
+		for state in GameState::iter() {
+			if ui
+				.selectable_value(&mut mut_state, state, state.to_string())
+				.clicked()
+			{
+				params.next_game_state.set(mut_state);
+			}
+		}
 	}
 }
 

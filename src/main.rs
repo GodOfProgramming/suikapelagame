@@ -52,7 +52,7 @@ fn main() {
 			SvgPlugin,
 		))
 		.insert_resource(ClearColor(Color::srgb_u8(0xff, 0xd5, 0x9d)))
-		.insert_resource(Gravity(Vec2::NEG_Y * 2000.0))
+		.insert_resource(Gravity(Vec2::NEG_Y * 2560.0))
 		.insert_resource(SubstepCount(12))
 		.insert_resource(SolverConfig {
 			contact_damping_ratio: 100.0,
@@ -66,11 +66,13 @@ fn main() {
 		.run();
 }
 
-#[derive(States, Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(
+	States, Debug, Hash, PartialEq, Eq, Clone, Copy, strum_macros::EnumIter, strum_macros::Display,
+)]
 enum GameState {
 	MainMenu,
 	InitGameplay,
-	NewGame,
+	Gameplay,
 	WinGame,
 	LoseGame,
 }

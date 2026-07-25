@@ -1,10 +1,12 @@
-use crate::{GameState, component_name, ui::components::FruitImage};
+use crate::{
+	GameState, component_name,
+	ui::components::{ClickableButton, FruitImage},
+};
 use bevy::{
 	camera::{ImageRenderTarget, RenderTarget, visibility::RenderLayers},
 	color::palettes::tailwind::ORANGE_500,
 	prelude::*,
 	render::render_resource::TextureFormat,
-	window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use bevy_svg::prelude::*;
 use rand::Rng;
@@ -181,7 +183,7 @@ struct StartButtonComponent;
 impl StartButtonComponent {
 	fn scene() -> impl Scene {
 		bsn! {
-			Button
+			@ClickableButton
 			BackgroundColor(ORANGE_500)
 			Node {
 				justify_content: JustifyContent::Center,
@@ -193,15 +195,8 @@ impl StartButtonComponent {
 			Children [
 				Text("Start") TextFont { weight: FontWeight(900), font_size: FontSize::Px(32.0) }
 			]
-			on(|_event: On<Pointer<Click>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>, mut game_state: ResMut<NextState<GameState>>| {
+			on(|_event: On<Pointer<Click>>, mut game_state: ResMut<NextState<GameState>>| {
 				game_state.set(GameState::InitGameplay);
-				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::default()));
-			})
-			on(|_event: On<Pointer<Enter>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>| {
-				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::Pointer));
-			})
-			on(|_event: On<Pointer<Leave>>, mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>| {
-				commands.entity(*window).insert(CursorIcon::System(SystemCursorIcon::default()));
 			})
 		}
 	}

@@ -1,13 +1,15 @@
-use std::{f32::consts::TAU, sync::LazyLock};
-
-use crate::{GameState, component_name, ui::RENDER_SCALE};
+use crate::{GameState, component_name, ui::RENDER_SCALE, util::despawn_query};
 use archipelago_rs::Client;
 use avian2d::prelude::*;
 use bevy::{
 	camera::visibility::RenderLayers,
-	ecs::{bundle::InsertMode, system::entity_command::insert},
+	ecs::{
+		bundle::InsertMode,
+		system::{RunSystemOnce, SystemParam, entity_command::insert},
+	},
 	prelude::*,
 };
+use bevy_defer::{AsyncCommandsExtension, AsyncWorld};
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
 use enum_map::{EnumMap, enum_map};
@@ -15,6 +17,7 @@ use parking_lot::Mutex;
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::{f32::consts::TAU, sync::LazyLock};
 use strum::VariantArray;
 use validator::Validate;
 
@@ -22,6 +25,7 @@ pub const GAME_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
 
 pub const WALL_PAD: f32 = 32.0;
 pub const WORLD_DIM: Vec2 = Vec2 { x: 480.0, y: 720.0 };
+const SIDE_POS: f32 = WORLD_DIM.x / 2.0 + WALL_PAD / 2.0;
 
 pub struct GamePlugin;
 
@@ -29,35 +33,58 @@ impl Plugin for GamePlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.init_resource::<PlaceholderPosition>()
+			.init_resource::<EndHeight>()
 			.init_resource::<NextFruit>()
 			.init_resource::<StaticAssets>()
 			.init_resource::<Score>()
+			.init_resource::<FruitDropDelay>()
+			.init_gizmo_group::<GameGizmos>()
 			.add_observer(archipelago_error_handler)
-			.add_observer(on_make_placeholder)
-			.add_observer(on_remove_placeholder)
-			.add_observer(on_new_fruit_body)
-			.add_observer(SpawnFruit::handle)
-			.add_observer(MovePlaceholder::handle)
-			.add_observer(DropPlaceholder::handle)
+			.add_observer(on_make_placeholder.run_if(in_state(GameState::Gameplay)))
+			.add_observer(on_remove_placeholder.run_if(in_state(GameState::Gameplay)))
+			.add_observer(on_new_fruit_body.run_if(in_state(GameState::Gameplay)))
+			.add_observer(SpawnFruit::handle.run_if(in_state(GameState::Gameplay)))
+			.add_observer(MovePlaceholder::handle.run_if(in_state(GameState::Gameplay)))
+			.add_observer(DropPlaceholder::handle.run_if(in_state(GameState::Gameplay)))
+			.add_observer(Win::handle)
+			.add_observer(Lose::handle)
+			.add_observer(SaveGame::handle)
+			.add_observer(LoadGame::handle)
 			.add_systems(OnEnter(GameState::InitGameplay), (level.spawn(), init_game))
-			.add_systems(OnEnter(GameState::NewGame), new_game)
-			.add_systems(OnExit(GameState::LoseGame), clear_last_game)
-			.add_systems(First, move_placeholder_location)
+			.add_systems(
+				OnEnter(GameState::Gameplay),
+				(despawn_query::<With<Fruit>>, new_game).chain(),
+			)
+			.add_systems(
+				First,
+				move_placeholder_location.run_if(in_state(GameState::Gameplay)),
+			)
+			.add_systems(Update, draw_gizmos)
 			.add_systems(
 				FixedUpdate,
 				(
 					receive_events.run_if(resource_exists::<ApClient>),
-					on_collisions,
+					on_collisions.run_if(in_state(GameState::Gameplay)),
 				),
 			);
 	}
 }
 
-fn init_game(mut game_state: ResMut<NextState<GameState>>) {
-	game_state.set(GameState::NewGame);
+fn init_game(
+	mut game_state: ResMut<NextState<GameState>>,
+	mut gizmo_config: ResMut<GizmoConfigStore>,
+) {
+	game_state.set(GameState::Gameplay);
+	let (config, _) = gizmo_config.config_mut::<GameGizmos>();
+	config.line.width = 8.0;
+	config.line.style = GizmoLineStyle::Dashed {
+		gap_scale: 3.0,
+		line_scale: 7.0,
+	};
 }
 
-fn new_game(mut commands: Commands) {
+fn new_game(mut commands: Commands, mut score: ResMut<Score>) {
+	score.restart();
 	commands.queue_spawn_scene(bsn! {
 		@PlaceholderFruit {
 			@fruit: Fruit::Cherry,
@@ -66,10 +93,10 @@ fn new_game(mut commands: Commands) {
 	});
 }
 
-fn clear_last_game(mut commands: Commands, q_fruits: Query<Entity, With<Fruit>>) {
-	for entity in q_fruits {
-		commands.entity(entity).despawn();
-	}
+fn draw_gizmos(mut gizmos: Gizmos<GameGizmos>, end_height: Res<EndHeight>) {
+	let left = Vec2::new(-WORLD_DIM.x * 2.0, **end_height);
+	let right = Vec2::new(WORLD_DIM.x * 2.0, **end_height);
+	gizmos.line_2d(left, right, Color::BLACK);
 }
 
 fn move_placeholder_location(
@@ -113,24 +140,42 @@ impl FromWorld for StaticAssets {
 fn on_collisions(
 	mut commands: Commands,
 	mut messages: MessageReader<CollisionStart>,
-	q_fruits: Query<(&Fruit, &Transform)>,
+	q_fruits: Query<(Entity, &Fruit, Has<FirstDrop>, &Transform)>,
 	mut rng: Single<&mut WyRand, With<GlobalRng>>,
 	static_assets: Res<StaticAssets>,
 	mut score: ResMut<Score>,
 	q_is_placeholder: Query<(), With<PlaceholderFruit>>,
+	end_height: Res<EndHeight>,
 ) {
 	for msg in messages.read() {
 		if q_is_placeholder.contains(msg.collider1) || q_is_placeholder.contains(msg.collider2) {
 			continue;
 		}
 
-		let [Some((fruit_a, tf_a)), Some((fruit_b, tf_b))] =
-			[msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
+		for (ent, _, first_drop, _) in [msg.collider1, msg.collider2]
+			.iter()
+			.filter_map(|&e| q_fruits.get(e).ok())
+		{
+			if first_drop {
+				commands.entity(ent).remove::<FirstDrop>();
+			}
+		}
+
+		let [
+			Some((_, fruit_a, first_drop_a, tf_a)),
+			Some((_, fruit_b, first_drop_b, tf_b)),
+		] = [msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
 		else {
 			continue;
 		};
 
 		if fruit_a != fruit_b {
+			let ay = tf_a.translation.y + fruit_a.radius();
+			let by = tf_b.translation.y + fruit_b.radius();
+			if !(first_drop_a || first_drop_b) && ay >= **end_height || by >= **end_height {
+				commands.trigger(Lose);
+				return;
+			}
 			continue;
 		}
 
@@ -174,8 +219,6 @@ fn on_collisions(
 }
 
 fn level() -> impl Scene {
-	const SIDE_POS: f32 = WORLD_DIM.x / 2.0 + WALL_PAD / 2.0;
-
 	bsn! {
 		Name::new("Level")
 		Transform Visibility
@@ -352,7 +395,7 @@ fn on_remove_placeholder(
 	};
 
 	entity.queue_silenced(insert(
-		(RigidBody::Dynamic, CollisionEventsEnabled),
+		(RigidBody::Dynamic, CollisionEventsEnabled, FirstDrop),
 		InsertMode::Replace,
 	));
 
@@ -361,7 +404,7 @@ fn on_remove_placeholder(
 	}
 }
 
-#[derive(Resource, Default, Reflect)]
+#[derive(Resource, Default, Reflect, Deref)]
 #[reflect(Resource)]
 struct PlaceholderPosition(Vec2);
 
@@ -385,6 +428,8 @@ impl DropPlaceholder {
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
 		mut next_fruit: ResMut<NextFruit>,
 		static_assets: Res<StaticAssets>,
+		location: Res<PlaceholderPosition>,
+		delay: Res<FruitDropDelay>,
 	) {
 		commands
 			.entity(*placeholder)
@@ -398,10 +443,10 @@ impl DropPlaceholder {
 
 		let fruit = next_fruit.next(&mut rng);
 
-		commands.delayed().secs(0.5).queue_spawn_scene(bsn! {
+		commands.delayed().secs(**delay).queue_spawn_scene(bsn! {
 			@PlaceholderFruit {
 				@fruit: fruit,
-				@x: 0.0,
+				@x: { location.x },
 			}
 		});
 	}
@@ -419,16 +464,10 @@ struct PlaceholderFruitProps {
 
 impl PlaceholderFruit {
 	fn scene(props: PlaceholderFruitProps) -> impl Scene {
-		let max_fruit_size = Fruit::VARIANTS
-			.iter()
-			.max_by_key(|f| f.radius() as u32)
-			.map(|f| f.radius())
-			.unwrap_or(128.0);
-
 		bsn! {
 			@FruitBody {
 				@fruit: { props.fruit },
-				@position: { Vec2::new(props.x, WORLD_DIM.y * 2.0 - max_fruit_size ) },
+				@position: { Vec2::new(props.x, WORLD_DIM.y * 2.0 - 256.0 ) },
 			}
 			{ component_name!(PlaceholderFruit) }
 		}
@@ -475,6 +514,12 @@ impl FruitBody {
 #[derive(Resource, Default, Deref)]
 pub struct Score(usize);
 
+impl Score {
+	fn restart(&mut self) {
+		self.0 = 0;
+	}
+}
+
 impl std::ops::AddAssign<Fruit> for Score {
 	fn add_assign(&mut self, rhs: Fruit) {
 		self.0 += rhs.value();
@@ -511,6 +556,8 @@ impl NextFruit {
 	strum_macros::Display,
 	strum_macros::VariantArray,
 	enum_iterator::Sequence,
+	Serialize,
+	Deserialize,
 )]
 pub enum Fruit {
 	#[default]
@@ -540,31 +587,31 @@ static DATA_MAP: LazyLock<EnumMap<Fruit, FruitData>> = LazyLock::new(|| {
 			radius: 24.0,
 			value: 1,
 			sprite: "binary/fruit/cherry.png",
-			weight: Some(7),
+			weight: Some(447),
 		},
 		Fruit::Strawberry => FruitData {
 			radius: 32.0,
 			value: 3,
 			sprite: "binary/fruit/strawberry.png",
-			weight: Some(5),
+			weight: Some(185),
 		},
 		Fruit::Grapes => FruitData {
 			radius: 40.0,
 			value: 6,
 			sprite: "binary/fruit/grape.png",
-			weight: Some(3),
+			weight: Some(142),
 		},
 		Fruit::Dekopon => FruitData {
 			radius: 56.0,
 			value: 10,
 			sprite: "binary/fruit/dekopon.png",
-			weight: Some(2),
+			weight: Some(120),
 		},
 		Fruit::Persimmon => FruitData {
 			radius: 64.0,
 			value: 15,
 			sprite: "binary/fruit/persimmon.png",
-			weight: Some(1),
+			weight: Some(106),
 		},
 		Fruit::Apple => FruitData {
 			radius: 72.0,
@@ -648,3 +695,209 @@ impl SpawnFruit {
 		});
 	}
 }
+
+#[derive(Default, Reflect, GizmoConfigGroup)]
+struct GameGizmos;
+
+#[derive(Resource, Reflect, Deref)]
+#[reflect(Resource)]
+struct EndHeight(f32);
+
+impl Default for EndHeight {
+	fn default() -> Self {
+		Self(1024.0)
+	}
+}
+
+#[derive(Event)]
+struct Win;
+
+impl Win {
+	fn handle(_: On<Self>, mut game_state: ResMut<NextState<GameState>>) {
+		game_state.set(GameState::WinGame);
+	}
+}
+
+#[derive(Event)]
+struct Lose;
+
+impl Lose {
+	fn handle(_: On<Self>, mut game_state: ResMut<NextState<GameState>>) {
+		game_state.set(GameState::LoseGame);
+	}
+}
+
+#[derive(Resource, Reflect, Deref)]
+#[reflect(Resource)]
+struct FruitDropDelay(f32);
+
+impl Default for FruitDropDelay {
+	fn default() -> Self {
+		Self(0.5)
+	}
+}
+
+#[derive(SystemParam)]
+struct SaveParams<'w, 's> {
+	score: Res<'w, Score>,
+	placeholder: Single<'w, 's, &'static Fruit, With<PlaceholderFruit>>,
+	next: Res<'w, NextFruit>,
+	rng: Single<'w, 's, &'static WyRand, With<GlobalRng>>,
+	fruits: Query<
+		'w,
+		's,
+		(
+			&'static Fruit,
+			&'static Transform,
+			&'static LinearVelocity,
+			&'static AngularVelocity,
+		),
+		Without<PlaceholderFruit>,
+	>,
+}
+
+#[derive(Event)]
+pub struct SaveGame;
+
+impl SaveGame {
+	fn handle(_: On<Self>, mut commands: Commands, params: SaveParams) -> Result {
+		let fruits = params
+			.fruits
+			.iter()
+			.map(|f| FruitSaveData {
+				fruit: *f.0,
+				transform: *f.1,
+				linear_velocity: *f.2,
+				angular_velocity: *f.3,
+			})
+			.collect();
+
+		let savegame = SaveGameData {
+			score: **params.score,
+			placeholder: **params.placeholder,
+			next: **params.next,
+			random_state: params.rng.clone(),
+			fruits,
+		};
+
+		let out = postcard::to_stdvec(&savegame)?;
+
+		commands.spawn_task(async || {
+			let Some(this_dir) = std::env::current_exe()
+				.ok()
+				.and_then(|f| f.parent().map(|p| p.to_path_buf()))
+			else {
+				return Ok(());
+			};
+
+			if let Err(err) = smol::fs::write(this_dir.join("save.bin"), out).await {
+				error!("Failed to save game: {err}");
+				return Ok(());
+			}
+
+			Ok(())
+		});
+
+		Ok(())
+	}
+}
+
+#[derive(Event)]
+pub struct LoadGame;
+
+impl LoadGame {
+	fn handle(_: On<Self>, mut commands: Commands, q_fruits: Query<Entity, With<Fruit>>) {
+		for fruit in q_fruits {
+			commands.entity(fruit).despawn();
+		}
+
+		commands.spawn_task(async || {
+			let Some(this_dir) = std::env::current_exe()
+				.ok()
+				.and_then(|f| f.parent().map(|p| p.to_path_buf()))
+			else {
+				return Ok(());
+			};
+
+			let bytes = match smol::fs::read(this_dir.join("save.bin")).await {
+				Ok(bytes) => bytes,
+				Err(err) => {
+					error!("Failed to load game: {err}");
+					return Ok(());
+				}
+			};
+
+			let data = match postcard::from_bytes(&bytes) {
+				Ok(data) => data,
+				Err(err) => {
+					error!("Failed to load game: {err}");
+					return Ok(());
+				}
+			};
+
+			AsyncWorld.apply_command(|world: &mut World| {
+				if let Err(err) = world.run_system_once_with(load_game, data) {
+					error!("Failed to load game: {err}");
+				}
+			});
+
+			Ok(())
+		});
+	}
+}
+
+#[derive(Serialize, Deserialize)]
+struct SaveGameData {
+	score: usize,
+	placeholder: Fruit,
+	next: Fruit,
+	random_state: WyRand,
+	fruits: Vec<FruitSaveData>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FruitSaveData {
+	fruit: Fruit,
+	transform: Transform,
+	linear_velocity: LinearVelocity,
+	angular_velocity: AngularVelocity,
+}
+
+#[derive(SystemParam)]
+struct LoadParams<'w, 's> {
+	commands: Commands<'w, 's>,
+	score: ResMut<'w, Score>,
+	placeholder_pos: Res<'w, PlaceholderPosition>,
+	next: ResMut<'w, NextFruit>,
+	rng: Single<'w, 's, &'static mut WyRand, With<GlobalRng>>,
+}
+
+fn load_game(data: In<SaveGameData>, mut params: LoadParams) {
+	params.score.0 = data.score;
+	params.next.0 = data.next;
+	**params.rng = data.random_state.clone();
+
+	params.commands.queue_spawn_scene(bsn! {
+		@PlaceholderFruit {
+			@fruit: { data.placeholder },
+			@x: { params.placeholder_pos.x },
+		}
+	});
+
+	for fruit in &data.fruits {
+		params.commands.queue_spawn_scene(bsn! {
+			@FruitBody {
+				@fruit: { fruit.fruit }
+			}
+			CollisionEventsEnabled
+			template_value(fruit.transform)
+			template_value(fruit.linear_velocity)
+			template_value(fruit.angular_velocity)
+			template_value(RigidBody::Dynamic)
+		});
+	}
+}
+
+#[derive(Component)]
+#[component(storage = "SparseSet")]
+struct FirstDrop;

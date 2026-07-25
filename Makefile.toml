@@ -11,3 +11,18 @@ args = ["run"]
 [tasks.dev]
 command = "cargo"
 args = ["run", "--features", "dev"]
+
+[tasks.build-release]
+description = "Build a release"
+run_task = [
+  { name = "build-windows", condition = { env = { "CARGO_MAKE_TASK_ARGS" = "windows" } } },
+  { name = "build-host" },
+]
+
+[tasks.build-host]
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.build-windows]
+command = "cargo"
+args = ["build", "--target", "x86_64-pc-windows-gnu", "--release"]

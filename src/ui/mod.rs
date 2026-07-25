@@ -1,24 +1,28 @@
 pub mod components;
-pub mod start_menu;
 
 use crate::{
 	GameCamera, GameState,
 	game::{ApClient, DropPlaceholder, MovePlaceholder, WORLD_DIM},
-	ui::{
-		components::{next_fruit::NextFruitPlugin, score::ScorePlugin},
-		start_menu::MainMenuPlugin,
+	ui::components::{
+		lose_popup::LosePopupPlugin,
+		next_fruit::NextFruitPlugin,
+		saveload::SaveLoadComponent,
+		score::ScorePlugin,
+		start_menu::{MainMenuPlugin, StartMenuComponent},
+		win_popup::WinPopupPlugin,
 	},
-	util::events::{send_event, send_event_on},
+	util::{
+		despawn_query,
+		events::{send_event, send_event_on},
+	},
 };
 use bevy::{
 	camera::{ImageRenderTarget, RenderTarget},
 	prelude::*,
 	render::render_resource::TextureFormat,
-	ui_widgets::observe,
 };
 use components::{FruitCircleComponent, LoginFormComponent, NextFruitComponent, ScoreComponent};
 use nameof::name_of;
-use start_menu::StartMenuComponent;
 
 #[macro_export]
 macro_rules! component_name {
@@ -37,11 +41,22 @@ impl Plugin for UiPlugin {
 		app
 			.add_observer(DisableLogin::handler)
 			.add_observer(send_event_on::<Add, ApClient>(DisableLogin))
-			.add_plugins((MainMenuPlugin, NextFruitPlugin, ScorePlugin))
+			.add_plugins((
+				MainMenuPlugin,
+				NextFruitPlugin,
+				ScorePlugin,
+				WinPopupPlugin,
+				LosePopupPlugin,
+			))
 			.add_systems(Startup, GameUi::scene.spawn())
 			.add_systems(
 				OnExit(GameState::MainMenu),
 				(send_event(DisableLogin), clear_center),
+			)
+			.add_systems(OnEnter(GameState::Gameplay), add_saveload)
+			.add_systems(
+				OnExit(GameState::Gameplay),
+				despawn_query::<With<SaveLoadComponent>>,
 			)
 			.add_systems(OnEnter(GameState::InitGameplay), init_game_view);
 	}
@@ -80,8 +95,8 @@ impl GameUi {
 				align_items: AlignItems::Stretch,
 			}
 			Children [
-				left(),
-				@MiddleComponent,
+				@LeftUi,
+				@MiddleUi,
 				right(),
 			]
 			on(|event: On<Add, Self>, mut commands: Commands, game_camera: Single<Entity, With<GameCamera>>| {
@@ -91,32 +106,37 @@ impl GameUi {
 	}
 }
 
-fn left() -> impl Scene {
-	bsn! {
-		Name::new("Left")
-		Node {
-			display: Display::Flex,
-			flex_direction: FlexDirection::Column,
-			width: percent(20),
-			height: percent(100),
-			justify_content: JustifyContent::SpaceBetween,
-			align_items: AlignItems::Stretch,
+#[derive(SceneComponent, Default, Clone)]
+struct LeftUi;
+
+impl LeftUi {
+	fn scene() -> impl Scene {
+		bsn! {
+			Name::new("Left")
+			Node {
+				display: Display::Flex,
+				flex_direction: FlexDirection::Column,
+				width: percent(20),
+				height: percent(100),
+				justify_content: JustifyContent::SpaceBetween,
+				align_items: AlignItems::Stretch,
+			}
+			Children [
+				@ScoreComponent Node {
+					margin: { UiRect::left(px(48)).with_top(px(176)) }
+				},
+				@LoginFormComponent Node {
+					margin: { UiRect::left(px(48)).with_bottom(px(160)) }
+				},
+			]
 		}
-		Children [
-			@ScoreComponent Node {
-				margin: { UiRect::left(px(48)).with_top(px(176)) }
-			},
-			@LoginFormComponent Node {
-				margin: { UiRect::left(px(48)).with_bottom(px(160)) }
-			},
-		]
 	}
 }
 
 #[derive(SceneComponent, Default, Clone)]
-struct MiddleComponent;
+struct MiddleUi;
 
-impl MiddleComponent {
+impl MiddleUi {
 	fn scene() -> impl Scene {
 		bsn! {
 			Name::new("Middle")
@@ -159,10 +179,7 @@ fn right() -> impl Scene {
 	}
 }
 
-fn clear_center(
-	mut commands: Commands,
-	q_middle_children: Query<&Children, With<MiddleComponent>>,
-) {
+fn clear_center(mut commands: Commands, q_middle_children: Query<&Children, With<MiddleUi>>) {
 	for children in q_middle_children {
 		for &child in children {
 			commands.entity(child).despawn();
@@ -173,13 +190,75 @@ fn clear_center(
 #[derive(Component, Default, Clone)]
 struct GameViewCamera;
 
-#[derive(Component)]
-struct GameView;
+#[derive(SceneComponent, Default, Clone)]
+#[scene(GameViewComponentProps)]
+struct GameViewComponent;
+
+struct GameViewComponentProps {
+	parent: Entity,
+	image: Handle<Image>,
+}
+
+impl Default for GameViewComponentProps {
+	fn default() -> Self {
+		Self {
+			parent: Entity::PLACEHOLDER,
+			image: default(),
+		}
+	}
+}
+
+impl GameViewComponent {
+	fn scene(props: GameViewComponentProps) -> impl Scene {
+		bsn! {
+			ImageNode {
+				image: { props.image }
+			}
+			Node {
+				width: percent(60),
+				max_height: vh(100),
+				aspect_ratio: { Some(WORLD_DIM.x / WORLD_DIM.y) },
+			}
+			ChildOf({ props.parent })
+			on(
+				|event: On<Pointer<Move>>,
+					mut commands: Commands,
+					camera: Single<(&Projection, &RenderTarget), With<GameViewCamera>>,
+					images: Res<Assets<Image>>| {
+					let Some(cursor) = event.hit.position else {
+						return;
+					};
+
+					let (projection, render_target) = *camera;
+
+					let Projection::Orthographic(ortho) = projection else {
+						return;
+					};
+
+					let Some(image_handle) = render_target.as_image() else {
+						return;
+					};
+
+					let Some(image) = images.get(image_handle.id()) else {
+						return;
+					};
+
+					let pos = cursor.xy().with_y(-cursor.y);
+
+					let world_pos = pos * ortho.scale * image.size().as_vec2();
+
+					commands.trigger(MovePlaceholder(world_pos));
+				},
+			)
+			on(send_event_on::<Pointer<Click>, ()>(DropPlaceholder))
+		}
+	}
+}
 
 fn init_game_view(
 	mut commands: Commands,
 	mut images: ResMut<Assets<Image>>,
-	q_middle_components: Query<Entity, With<MiddleComponent>>,
+	q_middle_components: Query<Entity, With<MiddleUi>>,
 ) {
 	let dim = WORLD_DIM.as_uvec2() * RENDER_SCALE as u32;
 	for mc in q_middle_components {
@@ -201,48 +280,21 @@ fn init_game_view(
 			Projection::Orthographic(OrthographicProjection::default_2d()),
 		));
 
-		commands.entity(mc).with_children(|commands| {
-			commands.spawn((
-				GameView,
-				ImageNode::new(image_handle.clone()),
-				Node {
-					width: percent(60),
-					max_height: vh(100),
-					aspect_ratio: Some(WORLD_DIM.x / WORLD_DIM.y),
-					..default()
-				},
-				observe(
-					|event: On<Pointer<Move>>,
-					 mut commands: Commands,
-					 camera: Single<(&Projection, &RenderTarget), With<GameViewCamera>>,
-					 images: Res<Assets<Image>>| {
-						let Some(cursor) = event.hit.position else {
-							return;
-						};
-
-						let (projection, render_target) = *camera;
-
-						let Projection::Orthographic(ortho) = projection else {
-							return;
-						};
-
-						let Some(image_handle) = render_target.as_image() else {
-							return;
-						};
-
-						let Some(image) = images.get(image_handle.id()) else {
-							return;
-						};
-
-						let pos = cursor.xy().with_y(-cursor.y);
-
-						let world_pos = pos * ortho.scale * image.size().as_vec2();
-
-						commands.trigger(MovePlaceholder(world_pos));
-					},
-				),
-				observe(send_event_on::<Pointer<Click>, ()>(DropPlaceholder)),
-			));
+		commands.queue_spawn_scene(bsn! {
+			@GameViewComponent {
+				@image: image_handle,
+				@parent: mc,
+			}
 		});
 	}
+}
+
+fn add_saveload(mut commands: Commands, left_ui: Single<Entity, With<LeftUi>>) {
+	commands.queue_spawn_scene(bsn! {
+		@SaveLoadComponent
+		ChildOf({ *left_ui })
+		Node {
+			margin: { UiRect::left(px(48)).with_bottom(px(160)) }
+		}
+	});
 }
