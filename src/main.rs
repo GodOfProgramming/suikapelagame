@@ -52,7 +52,7 @@ fn main() {
 			SvgPlugin,
 		))
 		.insert_resource(ClearColor(Color::srgb_u8(0xff, 0xd5, 0x9d)))
-		.insert_resource(Gravity(Vec2::NEG_Y * 2560.0))
+		.insert_resource(Gravity(Vec2::NEG_Y * 3200.0))
 		.insert_resource(SubstepCount(12))
 		.insert_resource(SolverConfig {
 			contact_damping_ratio: 100.0,

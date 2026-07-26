@@ -23,8 +23,13 @@ use validator::Validate;
 
 pub const GAME_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
 
+const BASE_WIDTH: f32 = 360.0;
+
 pub const WALL_PAD: f32 = 32.0;
-pub const WORLD_DIM: Vec2 = Vec2 { x: 480.0, y: 720.0 };
+pub const WORLD_DIM: Vec2 = Vec2 {
+	x: BASE_WIDTH,
+	y: BASE_WIDTH * 1.4,
+};
 const SIDE_POS: f32 = WORLD_DIM.x / 2.0 + WALL_PAD / 2.0;
 
 pub struct GamePlugin;
@@ -33,11 +38,12 @@ impl Plugin for GamePlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.init_resource::<PlaceholderPosition>()
-			.init_resource::<EndHeight>()
+			.init_resource::<LoseHeight>()
 			.init_resource::<NextFruit>()
 			.init_resource::<StaticAssets>()
 			.init_resource::<Score>()
 			.init_resource::<FruitDropDelay>()
+			.init_resource::<MinVelocityFirstDropThresh>()
 			.init_gizmo_group::<GameGizmos>()
 			.add_observer(archipelago_error_handler)
 			.add_observer(on_make_placeholder.run_if(in_state(GameState::Gameplay)))
@@ -64,7 +70,12 @@ impl Plugin for GamePlugin {
 				FixedUpdate,
 				(
 					receive_events.run_if(resource_exists::<ApClient>),
-					on_collisions.run_if(in_state(GameState::Gameplay)),
+					(
+						on_collisions,
+						remove_invincibility,
+						check_if_lose.after(TransformSystems::Propagate),
+					)
+						.run_if(in_state(GameState::Gameplay)),
 				),
 			);
 	}
@@ -93,7 +104,7 @@ fn new_game(mut commands: Commands, mut score: ResMut<Score>) {
 	});
 }
 
-fn draw_gizmos(mut gizmos: Gizmos<GameGizmos>, end_height: Res<EndHeight>) {
+fn draw_gizmos(mut gizmos: Gizmos<GameGizmos>, end_height: Res<LoseHeight>) {
 	let left = Vec2::new(-WORLD_DIM.x * 2.0, **end_height);
 	let right = Vec2::new(WORLD_DIM.x * 2.0, **end_height);
 	gizmos.line_2d(left, right, Color::BLACK);
@@ -140,42 +151,25 @@ impl FromWorld for StaticAssets {
 fn on_collisions(
 	mut commands: Commands,
 	mut messages: MessageReader<CollisionStart>,
-	q_fruits: Query<(Entity, &Fruit, Has<FirstDrop>, &Transform)>,
+	q_fruits: Query<(&Fruit, &Transform)>,
 	mut rng: Single<&mut WyRand, With<GlobalRng>>,
 	static_assets: Res<StaticAssets>,
 	mut score: ResMut<Score>,
 	q_is_placeholder: Query<(), With<PlaceholderFruit>>,
-	end_height: Res<EndHeight>,
+	time: Res<Time>,
 ) {
 	for msg in messages.read() {
 		if q_is_placeholder.contains(msg.collider1) || q_is_placeholder.contains(msg.collider2) {
 			continue;
 		}
 
-		for (ent, _, first_drop, _) in [msg.collider1, msg.collider2]
-			.iter()
-			.filter_map(|&e| q_fruits.get(e).ok())
-		{
-			if first_drop {
-				commands.entity(ent).remove::<FirstDrop>();
-			}
-		}
-
-		let [
-			Some((_, fruit_a, first_drop_a, tf_a)),
-			Some((_, fruit_b, first_drop_b, tf_b)),
-		] = [msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
+		let [Some((fruit_a, tf_a)), Some((fruit_b, tf_b))] =
+			[msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
 		else {
 			continue;
 		};
 
 		if fruit_a != fruit_b {
-			let ay = tf_a.translation.y + fruit_a.radius();
-			let by = tf_b.translation.y + fruit_b.radius();
-			if !(first_drop_a || first_drop_b) && ay >= **end_height || by >= **end_height {
-				commands.trigger(Lose);
-				return;
-			}
 			continue;
 		}
 
@@ -207,14 +201,14 @@ fn on_collisions(
 			PlaybackSettings::DESPAWN,
 		));
 
+		commands.entity(msg.collider1).try_despawn();
+		commands.entity(msg.collider2).try_despawn();
+
 		if let Some(fruit) = fruit_a.next() {
-			commands.trigger(SpawnFruit(fruit, middle.xy()));
+			commands.trigger(SpawnFruit(fruit, middle.xy(), time.elapsed_secs()));
 		}
 
 		*score += *fruit_a;
-
-		commands.entity(msg.collider1).try_despawn();
-		commands.entity(msg.collider2).try_despawn();
 	}
 }
 
@@ -395,7 +389,7 @@ fn on_remove_placeholder(
 	};
 
 	entity.queue_silenced(insert(
-		(RigidBody::Dynamic, CollisionEventsEnabled, FirstDrop),
+		(RigidBody::Dynamic, CollisionEventsEnabled),
 		InsertMode::Replace,
 	));
 
@@ -424,17 +418,25 @@ impl DropPlaceholder {
 	fn handle(
 		_: On<Self>,
 		mut commands: Commands,
-		placeholder: Single<Entity, With<PlaceholderFruit>>,
+		placeholder: Single<(Entity, &Fruit, &Transform), With<PlaceholderFruit>>,
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
 		mut next_fruit: ResMut<NextFruit>,
 		static_assets: Res<StaticAssets>,
-		location: Res<PlaceholderPosition>,
+		placeholder_pos: Res<PlaceholderPosition>,
 		delay: Res<FruitDropDelay>,
+		time: Res<Time>,
 	) {
+		let (entity, fruit, tf) = *placeholder;
 		commands
-			.entity(*placeholder)
+			.entity(entity)
 			.remove::<PlaceholderFruit>()
-			.insert((RigidBody::Dynamic, LinearVelocity(Vec2::new(0.0, -128.0))));
+			.apply_scene(bsn! {
+				@FruitBody {
+					@fruit: { *fruit },
+					@position: { tf.translation.xy() }
+				}
+				Invincible({ time.elapsed_secs() })
+			});
 
 		commands.spawn((
 			AudioPlayer::new(static_assets.click.clone()),
@@ -446,7 +448,7 @@ impl DropPlaceholder {
 		commands.delayed().secs(**delay).queue_spawn_scene(bsn! {
 			@PlaceholderFruit {
 				@fruit: fruit,
-				@x: { location.x },
+				@x: { placeholder_pos.x },
 			}
 		});
 	}
@@ -465,11 +467,16 @@ struct PlaceholderFruitProps {
 impl PlaceholderFruit {
 	fn scene(props: PlaceholderFruitProps) -> impl Scene {
 		bsn! {
-			@FruitBody {
-				@fruit: { props.fruit },
-				@position: { Vec2::new(props.x, WORLD_DIM.y * 2.0 - 256.0 ) },
-			}
 			{ component_name!(PlaceholderFruit) }
+			{ template_value(props.fruit) }
+			Sprite {
+				image: { props.fruit.sprite() },
+				custom_size: { Some(Vec2::splat(props.fruit.radius())) }
+			}
+			Transform {
+				translation: { Vec3::new(props.x, WORLD_DIM.y * 1.8, 1.0) },
+				scale: Vec3::from((Vec2::splat(RENDER_SCALE), 1.0)),
+			}
 		}
 	}
 }
@@ -488,8 +495,9 @@ impl FruitBody {
 	fn scene(props: FruitBodyProps) -> impl Scene {
 		bsn! {
 			Name::new(props.fruit.to_string())
-			Collider::circle(props.fruit.radius())
-			template_value(props.fruit)
+			Collider::circle(props.fruit.radius() / 2.0)
+			CollisionEventsEnabled
+			SweptCcd
 			Mass({props.fruit.radius()})
 			Restitution {
 				coefficient: 0.1,
@@ -500,13 +508,14 @@ impl FruitBody {
 			}
 			Sprite {
 				image: { props.fruit.sprite() },
-				custom_size: { Some(Vec2::splat(props.fruit.radius() * 2.0)) }
+				custom_size: { Some(Vec2::splat(props.fruit.radius())) }
 			}
 			Transform {
 				translation: { Vec3::from((props.position, 1.0)) },
 				scale: Vec3::from((Vec2::splat(RENDER_SCALE), 1.0)),
 			}
-			SweptCcd
+			template_value(props.fruit)
+			template_value(RigidBody::Dynamic)
 		}
 	}
 }
@@ -681,7 +690,7 @@ fn on_new_fruit_body(event: On<Add, FruitBody>, mut commands: Commands) {
 }
 
 #[derive(Event)]
-struct SpawnFruit(Fruit, Vec2);
+struct SpawnFruit(Fruit, Vec2, f32);
 
 impl SpawnFruit {
 	fn handle(event: On<Self>, mut commands: Commands) {
@@ -690,8 +699,7 @@ impl SpawnFruit {
 				@fruit: {event.0},
 				@position: { event.1 },
 			}
-			template_value(RigidBody::Dynamic)
-			CollisionEventsEnabled
+			Invincible({ event.2 })
 		});
 	}
 }
@@ -701,11 +709,11 @@ struct GameGizmos;
 
 #[derive(Resource, Reflect, Deref)]
 #[reflect(Resource)]
-struct EndHeight(f32);
+pub struct LoseHeight(f32);
 
-impl Default for EndHeight {
+impl Default for LoseHeight {
 	fn default() -> Self {
-		Self(1024.0)
+		Self(WORLD_DIM.y * 1.5)
 	}
 }
 
@@ -898,6 +906,47 @@ fn load_game(data: In<SaveGameData>, mut params: LoadParams) {
 	}
 }
 
-#[derive(Component)]
+#[derive(Resource, Reflect, Deref)]
+#[reflect(Resource)]
+struct MinVelocityFirstDropThresh(f32);
+
+impl Default for MinVelocityFirstDropThresh {
+	fn default() -> Self {
+		Self(10.0)
+	}
+}
+
+#[derive(Component, Default, Clone)]
 #[component(storage = "SparseSet")]
-struct FirstDrop;
+struct Invincible(f32);
+
+fn remove_invincibility(
+	mut commands: Commands,
+	q_invincible: Query<(Entity, &LinearVelocity, &Invincible)>,
+	min_thresh: Res<MinVelocityFirstDropThresh>,
+	time: Res<Time>,
+) {
+	let elapsed = time.elapsed_secs();
+	for (entity, vel, _) in q_invincible
+		.into_iter()
+		.filter(|(_, _, inv)| elapsed - inv.0 > 5.0)
+	{
+		if vel.length() < **min_thresh {
+			commands.entity(entity).remove::<Invincible>();
+		}
+	}
+}
+
+fn check_if_lose(
+	mut commands: Commands,
+	q_tf: Query<(&Transform, &Fruit), (Without<Invincible>, Without<PlaceholderFruit>)>,
+	end_height: Res<LoseHeight>,
+) {
+	for (tf, fruit) in q_tf {
+		let y = tf.translation.y + fruit.radius() * 2.0;
+		if y >= **end_height {
+			commands.trigger(Lose);
+			return;
+		}
+	}
+}

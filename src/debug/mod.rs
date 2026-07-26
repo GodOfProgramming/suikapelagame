@@ -3,7 +3,10 @@ use beditor::{EditorExtension, EditorExtensionPlugin, EditorUi, prelude::uuid};
 use bevy::{color::palettes::tailwind::RED_500, ecs::system::SystemParam, prelude::*};
 use strum::IntoEnumIterator;
 
-use crate::GameState;
+use crate::{
+	GameState,
+	game::{Fruit, LoseHeight},
+};
 
 pub struct DebugPlugin;
 
@@ -32,10 +35,12 @@ impl EditorExtension for DebugUiExtension {
 struct DebugUi;
 
 #[derive(SystemParam)]
-struct DebugUiParams<'w> {
+struct DebugUiParams<'w, 's> {
 	store: ResMut<'w, GizmoConfigStore>,
 	game_state: Res<'w, State<GameState>>,
 	next_game_state: ResMut<'w, NextState<GameState>>,
+	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static Fruit)>,
+	lose_height: Res<'w, LoseHeight>,
 }
 
 impl EditorUi for DebugUi {
@@ -45,7 +50,7 @@ impl EditorUi for DebugUi {
 
 	const UNIQUE: bool = true;
 
-	type Params<'w, 's> = DebugUiParams<'w>;
+	type Params<'w, 's> = DebugUiParams<'w, 's>;
 
 	fn spawn(_params: Self::Params<'_, '_>) -> Self {
 		Self
@@ -68,6 +73,20 @@ impl EditorUi for DebugUi {
 				params.next_game_state.set(mut_state);
 			}
 		}
+
+		ui.separator();
+
+		ui.label(format!("LoseHeight: {}", **params.lose_height));
+		ui.indent(ui.id().with("FRUIT_DISPLAY"), |ui| {
+			ui.vertical(|ui| {
+				for (entity, tf, fruit) in params.q_fruits {
+					ui.label(format!(
+						"{fruit} ({entity}): {}",
+						tf.translation.y + fruit.radius()
+					));
+				}
+			});
+		});
 	}
 }
 
