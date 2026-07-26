@@ -336,17 +336,17 @@ fn receive_events(apclient: ResMut<ApClient>, mut commands: Commands) {
 	let mut apclient = apclient.lock();
 	for event in apclient.update() {
 		match event {
-			archipelago_rs::Event::Connected => todo!(),
-			archipelago_rs::Event::Updated(updated_fields) => todo!(),
-			archipelago_rs::Event::Print(print) => todo!(),
-			archipelago_rs::Event::ReceivedItems(_) => todo!(),
+			archipelago_rs::Event::Connected => commands.trigger(ApMessage::new("Client connected")),
+			archipelago_rs::Event::Updated(updated_fields) => (),
+			archipelago_rs::Event::Print(print) => commands.trigger(ApMessage::new(print)),
+			archipelago_rs::Event::ReceivedItems(_) => (),
 			archipelago_rs::Event::Error(err) => commands.trigger(ArchipelagoError(err)),
 			archipelago_rs::Event::Bounce {
 				games,
 				slots,
 				tags,
 				data,
-			} => todo!(),
+			} => (),
 			archipelago_rs::Event::DeathLink {
 				games,
 				slots,
@@ -355,22 +355,32 @@ fn receive_events(apclient: ResMut<ApClient>, mut commands: Commands) {
 				server_time,
 				cause,
 				source,
-			} => todo!(),
+			} => (),
 			archipelago_rs::Event::KeyChanged {
 				key,
 				old_value,
 				new_value,
 				player,
-			} => todo!(),
+			} => (),
 		}
+	}
+}
+
+#[derive(Event, Deref)]
+pub struct ApMessage(pub String);
+
+impl ApMessage {
+	pub fn new(msg: impl ToString) -> Self {
+		Self(msg.to_string())
 	}
 }
 
 #[derive(Event, Deref)]
 struct ArchipelagoError(archipelago_rs::Error);
 
-fn archipelago_error_handler(event: On<ArchipelagoError>) {
+fn archipelago_error_handler(event: On<ArchipelagoError>, mut commands: Commands) {
 	error!("{}", event.0);
+	commands.trigger(ApMessage::new(&event.0))
 }
 
 fn on_make_placeholder(event: On<Add, PlaceholderFruit>, mut commands: Commands) {

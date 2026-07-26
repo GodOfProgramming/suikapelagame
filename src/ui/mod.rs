@@ -4,6 +4,8 @@ use crate::{
 	GameCamera, GameState,
 	game::{ApClient, DropPlaceholder, MovePlaceholder, WORLD_DIM},
 	ui::components::{
+		appzone,
+		chat::{ApChatPlugin, ChatComponent},
 		lose_popup::LosePopupPlugin,
 		next_fruit::NextFruitPlugin,
 		saveload::SaveLoadComponent,
@@ -47,13 +49,14 @@ impl Plugin for UiPlugin {
 				ScorePlugin,
 				WinPopupPlugin,
 				LosePopupPlugin,
+				ApChatPlugin,
 			))
 			.add_systems(Startup, GameUi::scene.spawn())
 			.add_systems(
 				OnExit(GameState::MainMenu),
 				(send_event(DisableLogin), clear_center),
 			)
-			.add_systems(OnEnter(GameState::Gameplay), add_saveload)
+			.add_systems(OnEnter(GameState::Gameplay), add_player_ui)
 			.add_systems(
 				OnExit(GameState::Gameplay),
 				despawn_query::<With<SaveLoadComponent>>,
@@ -109,6 +112,9 @@ impl GameUi {
 #[derive(SceneComponent, Default, Clone)]
 struct LeftUi;
 
+#[derive(Component, Default, Clone)]
+struct LeftZone;
+
 impl LeftUi {
 	fn scene() -> impl Scene {
 		bsn! {
@@ -125,9 +131,16 @@ impl LeftUi {
 				@ScoreComponent Node {
 					margin: { UiRect::left(px(48)).with_top(px(176)) }
 				},
-				@LoginFormComponent Node {
-					margin: { UiRect::left(px(48)).with_bottom(px(160)) }
-				},
+				appzone(bsn! {
+					@LoginFormComponent Node {
+						width: percent(100),
+				}})
+				LeftZone Node {
+					display: Display::Flex,
+					flex_direction: FlexDirection::Column,
+					width: percent(100),
+					margin: { UiRect::left(px(48)).with_bottom(px(128)) },
+				}
 			]
 		}
 	}
@@ -289,12 +302,13 @@ fn init_game_view(
 	}
 }
 
-fn add_saveload(mut commands: Commands, left_ui: Single<Entity, With<LeftUi>>) {
-	commands.queue_spawn_scene(bsn! {
-		@SaveLoadComponent
-		ChildOf({ *left_ui })
-		Node {
-			margin: { UiRect::left(px(48)).with_bottom(px(160)) }
-		}
-	});
+fn add_player_ui(mut commands: Commands, left: Single<Entity, With<LeftZone>>) {
+	commands.queue_spawn_scene_list(bsn_list! [
+		@ChatComponent Node {
+			width: percent(100)
+		} ChildOf({*left}),
+		@SaveLoadComponent Node {
+			width: percent(100)
+		} ChildOf({*left})
+	]);
 }

@@ -13,12 +13,9 @@ impl SaveLoadComponent {
 		bsn! {
 			{ component_name!(SaveLoadComponent) }
 			Node {
-				padding: UiRect::all(px(16)),
-				border_radius: BorderRadius::all(px(16))
 				display: Display::Flex,
 				flex_direction: FlexDirection::Column,
 			}
-			BackgroundColor({ Color::srgb_u8(0xff, 0xea, 0xce) })
 			Children [
 				@SaveButton,
 				@LoadButton,

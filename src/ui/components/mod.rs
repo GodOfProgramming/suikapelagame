@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod fruit_circle;
 pub mod login_form;
 pub mod lose_popup;
@@ -11,7 +12,7 @@ use crate::{GameState, util::math};
 use bevy::{
 	color::palettes::{
 		css::DARK_GREY,
-		tailwind::{SLATE_300, SLATE_500},
+		tailwind::{SLATE_200, SLATE_300, SLATE_500},
 	},
 	ecs::query::QueryFilter,
 	prelude::*,
@@ -51,6 +52,7 @@ impl AppEditableText {
 			template_value(text)
 			TextLayout::no_wrap()
 			TextCursorStyle::default()
+			TextColor(SLATE_200)
 			BackgroundColor(DARK_GREY)
 		}
 	}
@@ -249,5 +251,18 @@ impl ClickableButton {
 				},
 			)
 		}
+	}
+}
+
+pub fn appzone(children: impl SceneList) -> impl Scene {
+	bsn! {
+		Node {
+			padding: UiRect::all(px(16)),
+			border_radius: BorderRadius::all(px(16))
+		}
+		BackgroundColor({ Color::srgb_u8(0xff, 0xea, 0xce) })
+		Children [
+			{ children }
+		]
 	}
 }
