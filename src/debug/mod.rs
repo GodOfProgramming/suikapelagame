@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
 	GameState,
-	game::{Fruit, LoseHeight},
+	game::{ApMessage, Fruit, LoseHeight},
 };
 
 pub struct DebugPlugin;
@@ -36,11 +36,14 @@ struct DebugUi;
 
 #[derive(SystemParam)]
 struct DebugUiParams<'w, 's> {
+	commands: Commands<'w, 's>,
 	store: ResMut<'w, GizmoConfigStore>,
 	game_state: Res<'w, State<GameState>>,
 	next_game_state: ResMut<'w, NextState<GameState>>,
 	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static Fruit)>,
 	lose_height: Res<'w, LoseHeight>,
+
+	archipelago_message: Local<'s, String>,
 }
 
 impl EditorUi for DebugUi {
@@ -87,6 +90,16 @@ impl EditorUi for DebugUi {
 				}
 			});
 		});
+
+		ui.separator();
+
+		ui.label("Trigger Message");
+		ui.text_edit_singleline(&mut *params.archipelago_message);
+		if ui.button("Send").clicked() {
+			params
+				.commands
+				.queue(ApMessage::new(&*params.archipelago_message));
+		}
 	}
 }
 

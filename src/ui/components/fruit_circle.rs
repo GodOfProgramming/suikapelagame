@@ -1,7 +1,25 @@
-use bevy::prelude::*;
-
 use super::FruitImage;
-use crate::component_name;
+use crate::{
+	component_name,
+	game::{Fruit, FruitOrder},
+};
+use bevy::prelude::*;
+use strum::{EnumCount, VariantArray};
+
+const DEGREE_MAP: [f32; Fruit::COUNT] = [
+	60.0, 30.0, 0.0, 330.0, 300.0, 270.0, 240.0, 210.0, 180.0, 150.0, 120.0,
+];
+
+pub struct FruitCirclePlugin;
+
+impl Plugin for FruitCirclePlugin {
+	fn build(&self, app: &mut App) {
+		app.add_systems(
+			Update,
+			on_fruit_order_change.run_if(resource_changed::<FruitOrder>),
+		);
+	}
+}
 
 #[derive(SceneComponent, Default, Clone)]
 pub struct FruitCircleComponent;
@@ -15,62 +33,40 @@ impl FruitCircleComponent {
 				 aspect_ratio: { Some(1.0) }
 			}
 			Children [
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/cherry.png",
-					@degrees: 60.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/strawberry.png",
-					@degrees: 30.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/grape.png",
-					@degrees: 0.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/dekopon.png",
-					@degrees: 330.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/persimmon.png",
-					@degrees: 300.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/apple.png"
-					@degrees: 270.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/pear.png",
-					@degrees: 240.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/peach.png",
-					@degrees: 210.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/pineapple.png",
-					@degrees: 180.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/melon.png",
-					@degrees: 150.0,
-				},
-				@FruitImage {
-					@width: 20.0,
-					@image: "binary/fruit/watermelon.png",
-					@degrees: 120.0,
-				}
+				{ fruit_order_scene(Fruit::VARIANTS.try_into().unwrap()) }
 			]
 		}
+	}
+}
+
+pub fn fruit_order_scene(fruits: [Fruit; Fruit::COUNT]) -> impl SceneList {
+	bsn_list![{
+		fruits
+			.iter()
+			.copied()
+			.enumerate()
+			.map(|(i, f)| {
+				bsn! {
+					@FruitImage {
+						@width: 20.0,
+						@image: { f.sprite() },
+						@degrees: { DEGREE_MAP[i] },
+					}
+				}
+			})
+			.collect::<Vec<_>>()
+	}]
+}
+
+fn on_fruit_order_change(
+	mut commands: Commands,
+	q_fruit_circles: Query<Entity, With<FruitCircleComponent>>,
+	fruit_order: Res<FruitOrder>,
+) {
+	for fruit_circle in q_fruit_circles {
+		commands
+			.entity(fruit_circle)
+			.despawn_children()
+			.queue_spawn_related_scenes::<Children>(fruit_order_scene(**fruit_order));
 	}
 }

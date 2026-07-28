@@ -1,5 +1,5 @@
 use crate::{GameState, component_name, ui::RENDER_SCALE, util::despawn_query};
-use archipelago_rs::Client;
+use archipelago_rs::{Client, DeathLinkOptions};
 use avian2d::prelude::*;
 use bevy::{
 	camera::visibility::RenderLayers,
@@ -13,12 +13,11 @@ use bevy_defer::{AsyncCommandsExtension, AsyncWorld};
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
 use enum_map::{EnumMap, enum_map};
-use parking_lot::Mutex;
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{f32::consts::TAU, sync::LazyLock};
-use strum::VariantArray;
+use strum::{EnumCount, VariantArray};
 use validator::Validate;
 
 pub const GAME_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
@@ -43,8 +42,10 @@ impl Plugin for GamePlugin {
 			.init_resource::<StaticAssets>()
 			.init_resource::<Score>()
 			.init_resource::<FruitDropDelay>()
+			.init_resource::<FruitOrder>()
 			.init_resource::<MinVelocityFirstDropThresh>()
 			.init_gizmo_group::<GameGizmos>()
+			.add_message::<ApMessage>()
 			.add_observer(archipelago_error_handler)
 			.add_observer(on_make_placeholder.run_if(in_state(GameState::Gameplay)))
 			.add_observer(on_remove_placeholder.run_if(in_state(GameState::Gameplay)))
@@ -69,7 +70,7 @@ impl Plugin for GamePlugin {
 			.add_systems(
 				FixedUpdate,
 				(
-					receive_events.run_if(resource_exists::<ApClient>),
+					receive_archipelago_events.run_if(resource_exists::<ApClient>),
 					(
 						on_collisions,
 						remove_invincibility,
@@ -94,7 +95,12 @@ fn init_game(
 	};
 }
 
-fn new_game(mut commands: Commands, mut score: ResMut<Score>) {
+fn new_game(
+	mut commands: Commands,
+	mut score: ResMut<Score>,
+	mut fruit_order: ResMut<FruitOrder>,
+	apclient: Option<Res<ApClient>>,
+) {
 	score.restart();
 	commands.queue_spawn_scene(bsn! {
 		@PlaceholderFruit {
@@ -102,6 +108,15 @@ fn new_game(mut commands: Commands, mut score: ResMut<Score>) {
 			@x: 0.0,
 		}
 	});
+
+	let Some(apclient) = apclient else {
+		return;
+	};
+
+	let session_data = apclient.slot_data();
+	if let Some(shuffled) = session_data.shuffle_fruit {
+		fruit_order.0 = shuffled;
+	}
 }
 
 fn draw_gizmos(mut gizmos: Gizmos<GameGizmos>, end_height: Res<LoseHeight>) {
@@ -157,6 +172,7 @@ fn on_collisions(
 	mut score: ResMut<Score>,
 	q_is_placeholder: Query<(), With<PlaceholderFruit>>,
 	time: Res<Time>,
+	fruit_order: Res<FruitOrder>,
 ) {
 	for msg in messages.read() {
 		if q_is_placeholder.contains(msg.collider1) || q_is_placeholder.contains(msg.collider2) {
@@ -204,7 +220,7 @@ fn on_collisions(
 		commands.entity(msg.collider1).try_despawn();
 		commands.entity(msg.collider2).try_despawn();
 
-		if let Some(fruit) = fruit_a.next() {
+		if let Some(fruit) = fruit_order.next(*fruit_a) {
 			commands.trigger(SpawnFruit(fruit, middle.xy(), time.elapsed_secs()));
 		}
 
@@ -284,20 +300,20 @@ impl AreaBound {
 }
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct ApClient(Mutex<Client<SessionData>>);
+pub struct ApClient(Client<SessionData>);
 
 impl ApClient {
 	pub fn new(client: Client<SessionData>) -> Self {
-		Self(Mutex::new(client))
+		Self(client)
 	}
 }
 
-const MAX_FRUITS: usize = 11;
+unsafe impl Sync for ApClient {}
 
 #[derive(Debug, Default, Serialize, Deserialize, Validate)]
 pub struct SessionData {
 	deathlink: bool,
-	shuffle_fruit: Option<[usize; MAX_FRUITS]>,
+	shuffle_fruit: Option<[Fruit; Fruit::COUNT]>,
 	also_shuffle_sizes: bool,
 	#[validate(range(min = 0, max = 10))]
 	height_upgrade_count: usize,
@@ -332,21 +348,34 @@ enum Difficulty {
 	VeryHard,
 }
 
-fn receive_events(apclient: ResMut<ApClient>, mut commands: Commands) {
-	let mut apclient = apclient.lock();
+fn receive_archipelago_events(mut apclient: ResMut<ApClient>, mut commands: Commands) {
 	for event in apclient.update() {
 		match event {
-			archipelago_rs::Event::Connected => commands.trigger(ApMessage::new("Client connected")),
-			archipelago_rs::Event::Updated(updated_fields) => (),
-			archipelago_rs::Event::Print(print) => commands.trigger(ApMessage::new(print)),
-			archipelago_rs::Event::ReceivedItems(_) => (),
-			archipelago_rs::Event::Error(err) => commands.trigger(ArchipelagoError(err)),
+			archipelago_rs::Event::Connected => {
+				commands.queue(ApMessage::new("Client connected"));
+				let session_data = apclient.slot_data();
+				info!("Session Data: {session_data:#?}");
+			}
+			archipelago_rs::Event::Updated(updated_fields) => {
+				commands.queue(ApMessage::new("Updated"));
+			}
+			archipelago_rs::Event::Print(print) => {
+				commands.queue(ApMessage::new(print));
+			}
+			archipelago_rs::Event::ReceivedItems(items) => {
+				commands.queue(ApMessage::new("Received Items"));
+			}
+			archipelago_rs::Event::Error(err) => {
+				commands.trigger(ArchipelagoError(err));
+			}
 			archipelago_rs::Event::Bounce {
 				games,
 				slots,
 				tags,
 				data,
-			} => (),
+			} => {
+				commands.queue(ApMessage::new("Bounce"));
+			}
 			archipelago_rs::Event::DeathLink {
 				games,
 				slots,
@@ -355,18 +384,22 @@ fn receive_events(apclient: ResMut<ApClient>, mut commands: Commands) {
 				server_time,
 				cause,
 				source,
-			} => (),
+			} => {
+				commands.queue(ApMessage::new(format!("")));
+			}
 			archipelago_rs::Event::KeyChanged {
 				key,
 				old_value,
 				new_value,
 				player,
-			} => (),
+			} => {
+				commands.queue(ApMessage::new("KeyChanged"));
+			}
 		}
 	}
 }
 
-#[derive(Event, Deref)]
+#[derive(Message, Deref)]
 pub struct ApMessage(pub String);
 
 impl ApMessage {
@@ -375,12 +408,19 @@ impl ApMessage {
 	}
 }
 
+impl Command for ApMessage {
+	type Out = ();
+	fn apply(self, world: &mut World) -> Self::Out {
+		world.write_message(self);
+	}
+}
+
 #[derive(Event, Deref)]
 struct ArchipelagoError(archipelago_rs::Error);
 
 fn archipelago_error_handler(event: On<ArchipelagoError>, mut commands: Commands) {
 	error!("{}", event.0);
-	commands.trigger(ApMessage::new(&event.0))
+	commands.queue(ApMessage::new(&event.0))
 }
 
 fn on_make_placeholder(event: On<Add, PlaceholderFruit>, mut commands: Commands) {
@@ -566,6 +606,7 @@ impl NextFruit {
 
 #[derive(
 	Component,
+	Debug,
 	Default,
 	Clone,
 	Copy,
@@ -574,10 +615,14 @@ impl NextFruit {
 	enum_map::Enum,
 	strum_macros::Display,
 	strum_macros::VariantArray,
+	strum_macros::EnumCount,
+	strum_macros::FromRepr,
+	strum_macros::EnumIter,
 	enum_iterator::Sequence,
-	Serialize,
-	Deserialize,
+	Serialize_repr,
+	Deserialize_repr,
 )]
+#[repr(usize)]
 pub enum Fruit {
 	#[default]
 	Cherry,
@@ -740,8 +785,21 @@ impl Win {
 struct Lose;
 
 impl Lose {
-	fn handle(_: On<Self>, mut game_state: ResMut<NextState<GameState>>) {
+	fn handle(
+		_: On<Self>,
+		mut game_state: ResMut<NextState<GameState>>,
+		apclient: Option<ResMut<ApClient>>,
+	) -> Result {
 		game_state.set(GameState::LoseGame);
+
+		let Some(mut apclient) = apclient else {
+			return Ok(());
+		};
+
+		let player = apclient.this_player();
+		let cause = format!("{} topped out!", player.name());
+		apclient.death_link(DeathLinkOptions::new().cause(cause))?;
+		Ok(())
 	}
 }
 
@@ -769,6 +827,7 @@ struct SaveParams<'w, 's> {
 			&'static Transform,
 			&'static LinearVelocity,
 			&'static AngularVelocity,
+			Option<&'static Invincible>,
 		),
 		Without<PlaceholderFruit>,
 	>,
@@ -787,6 +846,7 @@ impl SaveGame {
 				transform: *f.1,
 				linear_velocity: *f.2,
 				angular_velocity: *f.3,
+				invincibility: f.4.map(|i| i.0),
 			})
 			.collect();
 
@@ -879,6 +939,7 @@ struct FruitSaveData {
 	transform: Transform,
 	linear_velocity: LinearVelocity,
 	angular_velocity: AngularVelocity,
+	invincibility: Option<f32>,
 }
 
 #[derive(SystemParam)]
@@ -912,6 +973,7 @@ fn load_game(data: In<SaveGameData>, mut params: LoadParams) {
 			template_value(fruit.linear_velocity)
 			template_value(fruit.angular_velocity)
 			template_value(RigidBody::Dynamic)
+			{ fruit.invincibility.map(|i| template_value(Invincible(i))) }
 		});
 	}
 }
@@ -958,5 +1020,26 @@ fn check_if_lose(
 			commands.trigger(Lose);
 			return;
 		}
+	}
+}
+
+#[derive(Resource, Deref)]
+pub struct FruitOrder([Fruit; Fruit::COUNT]);
+
+impl Default for FruitOrder {
+	fn default() -> Self {
+		Self(Fruit::VARIANTS.try_into().unwrap())
+	}
+}
+
+impl FruitOrder {
+	fn next(&self, current: Fruit) -> Option<Fruit> {
+		self
+			.0
+			.iter()
+			.enumerate()
+			.find_map(|(i, f)| (*f == current).then_some(i))
+			.and_then(|i| self.0.get(i + 1))
+			.cloned()
 	}
 }

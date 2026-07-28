@@ -6,6 +6,7 @@ use crate::{
 	ui::components::{
 		appzone,
 		chat::{ApChatPlugin, ChatComponent},
+		fruit_circle::FruitCirclePlugin,
 		lose_popup::LosePopupPlugin,
 		next_fruit::NextFruitPlugin,
 		saveload::SaveLoadComponent,
@@ -50,6 +51,7 @@ impl Plugin for UiPlugin {
 				WinPopupPlugin,
 				LosePopupPlugin,
 				ApChatPlugin,
+				FruitCirclePlugin,
 			))
 			.add_systems(Startup, GameUi::scene.spawn())
 			.add_systems(
