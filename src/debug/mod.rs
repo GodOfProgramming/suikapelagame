@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
 	GameState,
-	game::{ApMessage, Fruit, LoseHeight},
+	game::{Fruit, archipelago::ApMessage, termination::lose::LoseHeight},
 };
 
 pub struct DebugPlugin;

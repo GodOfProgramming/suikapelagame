@@ -1,7 +1,7 @@
 use super::FruitImage;
 use crate::{
 	component_name,
-	game::{Fruit, FruitOrder},
+	game::{Fruit, res::FruitOrder},
 };
 use bevy::prelude::*;
 use strum::{EnumCount, VariantArray};
@@ -67,6 +67,6 @@ fn on_fruit_order_change(
 		commands
 			.entity(fruit_circle)
 			.despawn_children()
-			.queue_spawn_related_scenes::<Children>(fruit_order_scene(**fruit_order));
+			.queue_spawn_related_scenes::<Children>(fruit_order_scene(fruit_order.order()));
 	}
 }

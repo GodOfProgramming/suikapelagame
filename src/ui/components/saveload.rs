@@ -1,6 +1,6 @@
 use crate::{
 	component_name,
-	game::{LoadGame, SaveGame},
+	game::persistence::{LoadSaveFile, SaveGame},
 	ui::components::AppButton,
 };
 use bevy::prelude::*;
@@ -50,7 +50,7 @@ impl LoadButton {
 			Node { justify_content: JustifyContent::Center }
 			Children [ Text::new("Load") TextColor::BLACK ]
 			on(|_: On<Pointer<Click>>, mut commands: Commands| {
-				commands.trigger(LoadGame);
+				commands.trigger(LoadSaveFile);
 			})
 		}
 	}

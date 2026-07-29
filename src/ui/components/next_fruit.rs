@@ -1,4 +1,4 @@
-use crate::{component_name, game::NextFruit};
+use crate::{component_name, game::res::NextFruit};
 use bevy::prelude::*;
 
 pub struct NextFruitPlugin;

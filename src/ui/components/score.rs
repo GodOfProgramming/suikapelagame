@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{component_name, game::Score};
+use crate::{component_name, game::res::Score};
 
 pub struct ScorePlugin;
 

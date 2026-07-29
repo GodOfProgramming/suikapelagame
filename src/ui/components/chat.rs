@@ -1,6 +1,6 @@
 use crate::{
 	component_name,
-	game::{ApClient, ApMessage},
+	game::archipelago::{ApClient, ApMessage},
 	ui::components::AppEditableText,
 };
 use bevy::{

@@ -2,7 +2,11 @@ pub mod components;
 
 use crate::{
 	GameCamera, GameState,
-	game::{ApClient, DropPlaceholder, MovePlaceholder, WORLD_DIM},
+	game::{
+		WORLD_DIM,
+		archipelago::ApClient,
+		evt::{DropPlaceholder, MovePlaceholder},
+	},
 	ui::components::{
 		appzone,
 		chat::{ApChatPlugin, ChatComponent},

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use super::AppEditableText;
 use crate::{
 	component_name,
-	game::{ApClient, SessionData},
+	game::archipelago::{ApClient, SessionData},
 	ui::components::AppButton,
 };
 use bevy::{ecs::system::SystemParam, prelude::*, text::EditableText, ui::FlexDirection};
