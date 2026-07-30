@@ -1,5 +1,5 @@
-use super::{FruitKind, FruitData, WORLD_DIM};
-use crate::{component_name, game::cmp::FruitValue, ui::RENDER_SCALE};
+use super::WORLD_DIM;
+use crate::{component_name, game::Fruit, ui::RENDER_SCALE};
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -12,7 +12,7 @@ pub struct PlaceholderFruit;
 
 #[derive(Default)]
 pub struct PlaceholderFruitProps {
-	pub fruit: FruitKind,
+	pub fruit: Fruit,
 	pub x: f32,
 }
 
@@ -22,8 +22,8 @@ impl PlaceholderFruit {
 			{ component_name!(PlaceholderFruit) }
 			{ template_value(props.fruit) }
 			Sprite {
-				image: { props.fruit.sprite() },
-				custom_size: { Some(Vec2::splat(props.fruit.radius())) }
+				image: { props.fruit.data.sprite },
+				custom_size: { Some(Vec2::splat(props.fruit.data.radius)) }
 			}
 			Transform {
 				translation: { Vec3::new(props.x, WORLD_DIM.y * 1.8, 1.0) },
@@ -39,21 +39,18 @@ pub struct FruitBody;
 
 #[derive(Default)]
 pub struct FruitBodyProps {
-	pub fruit: FruitKind,
+	pub fruit: Fruit,
 	pub position: Vec2,
-	pub custom: Option<FruitData>,
 }
 
 impl FruitBody {
 	fn scene(props: FruitBodyProps) -> impl Scene {
-		let data = props.custom.unwrap_or_else(|| props.fruit.data());
-
 		bsn! {
-			Name::new(props.fruit.to_string())
-			Collider::circle(data.radius / 2.0)
+			Name::new(props.fruit.kind.to_string())
+			Collider::circle(props.fruit.data.radius / 2.0)
 			CollisionEventsEnabled
 			SweptCcd
-			Mass({data.radius})
+			Mass({props.fruit.data.radius})
 			Restitution {
 				coefficient: 0.1,
 			}
@@ -62,14 +59,13 @@ impl FruitBody {
 				static_coefficient: 0.06,
 			}
 			Sprite {
-				image: { data.sprite },
-				custom_size: { Some(Vec2::splat(data.radius)) }
+				image: { props.fruit.data.sprite },
+				custom_size: { Some(Vec2::splat(props.fruit.data.radius)) }
 			}
 			Transform {
 				translation: { Vec3::from((props.position, 1.0)) },
 				scale: Vec3::from((Vec2::splat(RENDER_SCALE), 1.0)),
 			}
-			FruitValue::new(data.value)
 			template_value(props.fruit)
 			template_value(RigidBody::Dynamic)
 		}

@@ -8191,6 +8191,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "validator",
+ "wyrand",
 ]
 
 [[package]]

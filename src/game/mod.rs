@@ -8,10 +8,10 @@ pub mod termination;
 
 use crate::{
 	GameState,
-	game::{res::ResPlugin, termination::TerminationPlugin},
-	util::despawn_query,
+	game::{evt::NewGame, res::ResPlugin, termination::TerminationPlugin},
+	util::{despawn_query, events::send_event},
 };
-use archipelago::{ApClient, ArchipelagoPlugin};
+use archipelago::ArchipelagoPlugin;
 use avian2d::prelude::*;
 use bevy::{
 	camera::visibility::RenderLayers,
@@ -23,7 +23,7 @@ use bevy::{
 };
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
-use cmp::{FruitValue, Invincible};
+use cmp::Invincible;
 use evt::{DropPlaceholder, MovePlaceholder, SpawnFruit};
 use persistence::PersistencePlugin;
 use rand::RngExt;
@@ -60,14 +60,12 @@ impl Plugin for GamePlugin {
 			.add_observer(SpawnFruit::handle.run_if(in_state(GameState::Gameplay)))
 			.add_observer(MovePlaceholder::handle.run_if(in_state(GameState::Gameplay)))
 			.add_observer(DropPlaceholder::handle.run_if(in_state(GameState::Gameplay)))
+			.add_observer(NewGame::handle.run_if(in_state(GameState::Gameplay)))
 			.add_systems(
 				OnEnter(GameState::InitGameplay),
 				(level.spawn(), init_gameplay),
 			)
-			.add_systems(
-				OnEnter(GameState::Gameplay),
-				(despawn_query::<With<FruitKind>>, new_game).chain(),
-			)
+			.add_systems(OnEnter(GameState::Gameplay), send_event(NewGame))
 			.add_systems(
 				First,
 				move_placeholder_location.run_if(in_state(GameState::Gameplay)),
@@ -91,30 +89,6 @@ fn init_gameplay(
 		gap_scale: 3.0,
 		line_scale: 7.0,
 	};
-}
-
-fn new_game(
-	mut commands: Commands,
-	mut score: ResMut<Score>,
-	mut fruit_order: ResMut<FruitOrder>,
-	apclient: Option<Res<ApClient>>,
-) {
-	score.restart();
-	commands.queue_spawn_scene(bsn! {
-		@PlaceholderFruit {
-			@fruit: FruitKind::Cherry,
-			@x: 0.0,
-		}
-	});
-
-	let Some(apclient) = apclient else {
-		return;
-	};
-
-	let session_data = apclient.slot_data();
-	if let Some(shuffled) = session_data.shuffle_fruit {
-		fruit_order.order = shuffled;
-	}
 }
 
 fn draw_gizmos(mut gizmos: Gizmos<GameGizmos>, end_height: Res<LoseHeight>) {
@@ -143,7 +117,7 @@ struct CollisionRes<'w> {
 fn on_collisions(
 	mut commands: Commands,
 	mut messages: MessageReader<CollisionStart>,
-	q_fruits: Query<(&FruitKind, &FruitValue, &Transform)>,
+	q_fruits: Query<(&Fruit, &Transform)>,
 	mut rng: Single<&mut WyRand, With<GlobalRng>>,
 	q_is_placeholder: Query<(), With<PlaceholderFruit>>,
 	mut res: CollisionRes,
@@ -153,15 +127,13 @@ fn on_collisions(
 			continue;
 		}
 
-		let [
-			Some((fruit_a, value_a, tf_a)),
-			Some((fruit_b, value_b, tf_b)),
-		] = [msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
+		let [Some((fruit_a, tf_a)), Some((fruit_b, tf_b))] =
+			[msg.collider1, msg.collider2].map(|e| q_fruits.get(e).ok())
 		else {
 			continue;
 		};
 
-		if fruit_a != fruit_b {
+		if fruit_a.kind != fruit_b.kind {
 			continue;
 		}
 
@@ -171,7 +143,7 @@ fn on_collisions(
 			.spawn((
 				Sprite {
 					image: res.static_assets.pop.clone(),
-					custom_size: Some(Vec2::splat(fruit_a.radius())),
+					custom_size: Some(Vec2::splat(fruit_a.data.radius)),
 					..default()
 				},
 				Transform {
@@ -189,23 +161,22 @@ fn on_collisions(
 			.try_despawn();
 
 		commands.spawn((
-			AudioPlayer::new(res.static_assets.fruit_pops[*fruit_a].clone()),
+			AudioPlayer::new(res.static_assets.fruit_pops[fruit_a.kind].clone()),
 			PlaybackSettings::DESPAWN,
 		));
 
 		commands.entity(msg.collider1).try_despawn();
 		commands.entity(msg.collider2).try_despawn();
 
-		if let Some((fruit, data)) = res.fruit_order.next(*fruit_a) {
+		if let Some(fruit) = res.fruit_order.next(fruit_a.kind) {
 			commands.trigger(SpawnFruit {
-				fruit,
-				data,
+				fruit: fruit.clone(),
 				position: middle.xy(),
 				invincibility: res.time.elapsed_secs(),
 			});
 		}
 
-		**res.score += **value_a + **value_b;
+		**res.score += fruit_a.data.value + fruit_b.data.value;
 	}
 }
 
@@ -218,7 +189,7 @@ fn on_make_placeholder(event: On<Add, PlaceholderFruit>, mut commands: Commands)
 fn on_remove_placeholder(
 	event: On<Remove, PlaceholderFruit>,
 	mut commands: Commands,
-	q_fruits: Query<&FruitKind>,
+	q_fruits: Query<&Fruit>,
 ) {
 	let Ok(mut entity) = commands.get_spawned_entity(event.event_target()) else {
 		return;
@@ -230,12 +201,36 @@ fn on_remove_placeholder(
 	));
 
 	if let Ok(fruit) = q_fruits.get(event.event_target()) {
-		entity.queue_silenced(insert(Name::new(fruit.to_string()), InsertMode::Replace));
+		entity.queue_silenced(insert(
+			Name::new(fruit.kind.to_string()),
+			InsertMode::Replace,
+		));
+	}
+}
+
+#[derive(Component, Reflect, Debug, Clone)]
+pub struct Fruit {
+	pub kind: FruitKind,
+	pub data: FruitData,
+}
+
+impl Default for Fruit {
+	fn default() -> Self {
+		Self::from(FruitKind::Cherry)
+	}
+}
+
+impl From<FruitKind> for Fruit {
+	fn from(value: FruitKind) -> Self {
+		Self {
+			kind: value,
+			data: value.data(),
+		}
 	}
 }
 
 #[derive(
-	Component,
+	Reflect,
 	Debug,
 	Default,
 	Clone,
@@ -268,16 +263,16 @@ pub enum FruitKind {
 	Watermelon,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Reflect, Debug, Clone, Copy)]
 pub struct FruitData {
-	radius: f32,
-	value: usize,
-	sprite: &'static str,
-	weight: Option<usize>,
+	pub radius: f32,
+	pub value: usize,
+	pub sprite: &'static str,
+	pub weight: Option<usize>,
 }
 
 impl FruitKind {
-	fn data(self) -> FruitData {
+	const fn data(self) -> FruitData {
 		match self {
 			FruitKind::Cherry => FruitData {
 				radius: 24.0,
@@ -348,15 +343,15 @@ impl FruitKind {
 		}
 	}
 
-	pub fn radius(self) -> f32 {
+	pub const fn radius(self) -> f32 {
 		self.data().radius
 	}
 
-	pub fn sprite(self) -> &'static str {
+	pub const fn sprite(self) -> &'static str {
 		self.data().sprite
 	}
 
-	pub fn weight(self) -> Option<usize> {
+	pub const fn weight(self) -> Option<usize> {
 		self.data().weight
 	}
 }

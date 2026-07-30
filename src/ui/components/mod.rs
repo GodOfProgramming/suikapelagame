@@ -202,7 +202,7 @@ fn spawn_state_popup<F: QueryFilter>(
 }
 
 #[derive(SceneComponent, Default, Clone)]
-struct AppButton;
+pub struct AppButton;
 
 impl AppButton {
 	fn scene() -> impl Scene {

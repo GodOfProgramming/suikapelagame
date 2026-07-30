@@ -1,12 +1,14 @@
-use super::{FruitData, FruitKind};
 use crate::game::{
+	Fruit,
+	archipelago::ApClient,
 	cmp::Invincible,
-	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, StaticAssets},
+	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score, StaticAssets},
 	scn::{FruitBody, PlaceholderFruit},
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
+use rand::Rng;
 
 #[derive(Event, Clone, Deref)]
 pub struct MovePlaceholder(pub Vec2);
@@ -34,7 +36,7 @@ impl DropPlaceholder {
 	pub fn handle(
 		_: On<Self>,
 		mut commands: Commands,
-		placeholder: Single<(Entity, &FruitKind, &Transform), With<PlaceholderFruit>>,
+		placeholder: Single<(Entity, &Fruit, &Transform), With<PlaceholderFruit>>,
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
 		mut res: DropPlaceholderRes,
 	) {
@@ -45,7 +47,7 @@ impl DropPlaceholder {
 			.remove::<PlaceholderFruit>()
 			.apply_scene(bsn! {
 				@FruitBody {
-					@fruit: { *fruit },
+					@fruit: { fruit.clone() },
 					@position: { tf.translation.xy() }
 				}
 				Invincible::new(elapsed)
@@ -72,8 +74,7 @@ impl DropPlaceholder {
 
 #[derive(Event)]
 pub struct SpawnFruit {
-	pub fruit: FruitKind,
-	pub data: FruitData,
+	pub fruit: Fruit,
 	pub position: Vec2,
 	pub invincibility: f32,
 }
@@ -83,11 +84,60 @@ impl SpawnFruit {
 		let invincibility = event.invincibility;
 		commands.spawn_scene(bsn! {
 			@FruitBody {
-				@fruit: {event.fruit},
+				@fruit: { event.fruit.clone() },
 				@position: { event.position },
-				@custom: { Some(event.data) }
 			}
 			Invincible::new(invincibility)
 		});
+	}
+}
+
+#[derive(Event, Clone, Copy)]
+pub struct NewGame;
+
+#[derive(SystemParam)]
+pub struct ResetGameRes<'w> {
+	score: ResMut<'w, Score>,
+	fruit_order: ResMut<'w, FruitOrder>,
+	apclient: Option<Res<'w, ApClient>>,
+	next_fruit: ResMut<'w, NextFruit>,
+	placeholder_position: Res<'w, PlaceholderPosition>,
+}
+
+impl NewGame {
+	pub fn handle(
+		_: On<Self>,
+		mut commands: Commands,
+		q_fruits: Query<Entity, With<Fruit>>,
+		mut rng: Single<&mut WyRand, With<GlobalRng>>,
+		mut res: ResetGameRes,
+	) {
+		for entity in q_fruits {
+			commands.entity(entity).despawn();
+		}
+
+		**rng = wyrand::WyRand::new(rand::rng().next_u64()).into();
+
+		res.score.restart();
+
+		let next = res.next_fruit.init(&res.fruit_order, &mut rng);
+
+		commands.queue_spawn_scene(bsn! {
+			@PlaceholderFruit {
+				@fruit: next,
+				@x: { res.placeholder_position.x },
+			}
+		});
+
+		let Some(apclient) = res.apclient else {
+			return;
+		};
+
+		let session_data = apclient.slot_data();
+		if let Some(shuffled) = session_data.shuffle_fruit {
+			res
+				.fruit_order
+				.set_order(shuffled, session_data.also_shuffle_sizes);
+		}
 	}
 }

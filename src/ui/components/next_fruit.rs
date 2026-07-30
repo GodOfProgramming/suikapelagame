@@ -18,7 +18,7 @@ fn update_next_fruit(
 	asset_server: Res<AssetServer>,
 ) {
 	for mut img_node in q_next_fruit_images {
-		img_node.image = asset_server.load(next_fruit.sprite());
+		img_node.image = asset_server.load(next_fruit.data.sprite);
 	}
 }
 

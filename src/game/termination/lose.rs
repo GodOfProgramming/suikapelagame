@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use crate::{
 	GameState,
-	game::{FruitKind, Invincible, WORLD_DIM, archipelago::ApClient, scn::PlaceholderFruit},
+	game::{Fruit, FruitKind, Invincible, WORLD_DIM, archipelago::ApClient, scn::PlaceholderFruit},
 };
 
 pub struct LosePlugin;
@@ -56,11 +56,11 @@ impl Default for LoseHeight {
 
 fn check_if_lose(
 	mut commands: Commands,
-	q_tf: Query<(&Transform, &FruitKind), (Without<Invincible>, Without<PlaceholderFruit>)>,
+	q_tf: Query<(&Transform, &Fruit), (Without<Invincible>, Without<PlaceholderFruit>)>,
 	end_height: Res<LoseHeight>,
 ) {
 	for (tf, fruit) in q_tf {
-		let y = tf.translation.y + fruit.radius() * 2.0;
+		let y = tf.translation.y + fruit.data.radius * 2.0;
 		if y >= **end_height {
 			commands.trigger(Lose);
 			return;

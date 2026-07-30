@@ -1,7 +1,8 @@
 use super::FruitKind;
 use crate::game::{
-	cmp::{FruitValue, Invincible},
-	res::{NextFruit, PlaceholderPosition, Score},
+	Fruit,
+	cmp::Invincible,
+	res::{FruitOrder, NextFruit, PlaceholderPosition, Score},
 	scn::{FruitBody, PlaceholderFruit},
 };
 use avian2d::prelude::*;
@@ -28,19 +29,18 @@ impl Plugin for PersistencePlugin {
 
 #[derive(QueryData)]
 struct FruitDataToSave {
-	fruit: &'static FruitKind,
+	fruit: &'static Fruit,
 	transform: &'static Transform,
 	linear_velocity: &'static LinearVelocity,
 	angular_velocity: &'static AngularVelocity,
 	sprite: &'static Sprite,
-	value: &'static FruitValue,
 	invincibility: Option<&'static Invincible>,
 }
 
 #[derive(SystemParam)]
 struct SaveParams<'w, 's> {
 	score: Res<'w, Score>,
-	placeholder: Single<'w, 's, &'static FruitKind, With<PlaceholderFruit>>,
+	placeholder: Single<'w, 's, &'static Fruit, With<PlaceholderFruit>>,
 	next: Res<'w, NextFruit>,
 	rng: Single<'w, 's, &'static WyRand, With<GlobalRng>>,
 	fruits: Query<'w, 's, FruitDataToSave, Without<PlaceholderFruit>>,
@@ -55,20 +55,20 @@ impl SaveGame {
 			.fruits
 			.iter()
 			.map(|f| FruitSaveData {
-				fruit: *f.fruit,
+				kind: f.fruit.kind,
+				value: f.fruit.data.value,
 				transform: *f.transform,
 				linear_velocity: *f.linear_velocity,
 				angular_velocity: *f.angular_velocity,
 				sprite: f.sprite.image.path().cloned().unwrap_or_default(),
-				value: **f.value,
 				invincibility: f.invincibility.map(|i| **i),
 			})
 			.collect();
 
 		let savegame = SaveGameData {
 			score: **params.score,
-			placeholder: **params.placeholder,
-			next: **params.next,
+			placeholder: params.placeholder.kind,
+			next: params.next.kind,
 			random_state: params.rng.clone(),
 			fruits,
 		};
@@ -99,7 +99,7 @@ impl SaveGame {
 pub struct LoadSaveFile;
 
 impl LoadSaveFile {
-	fn handle(_: On<Self>, mut commands: Commands, q_fruits: Query<Entity, With<FruitKind>>) {
+	fn handle(_: On<Self>, mut commands: Commands, q_fruits: Query<Entity, With<Fruit>>) {
 		for fruit in q_fruits {
 			commands.entity(fruit).despawn();
 		}
@@ -146,44 +146,53 @@ struct SaveGameData {
 
 #[derive(Serialize, Deserialize)]
 struct FruitSaveData {
-	fruit: FruitKind,
+	kind: FruitKind,
+	value: usize,
 	transform: Transform,
 	linear_velocity: LinearVelocity,
 	angular_velocity: AngularVelocity,
 	invincibility: Option<f32>,
 	sprite: AssetPath<'static>,
-	value: usize,
 }
 
 #[derive(SystemParam)]
-struct LoadParams<'w, 's> {
-	commands: Commands<'w, 's>,
+struct LoadRes<'w> {
 	score: ResMut<'w, Score>,
 	placeholder_pos: Res<'w, PlaceholderPosition>,
 	next: ResMut<'w, NextFruit>,
-	rng: Single<'w, 's, &'static mut WyRand, With<GlobalRng>>,
+	order: Res<'w, FruitOrder>,
 }
 
 #[derive(Event, Deref)]
 struct LoadSavedGame(SaveGameData);
 
 impl LoadSavedGame {
-	fn handle(data: On<Self>, mut params: LoadParams) {
-		**params.score = data.score;
-		**params.next = data.next;
-		**params.rng = data.random_state.clone();
+	fn handle(
+		event: On<Self>,
+		mut commands: Commands,
+		mut rng: Single<&'static mut WyRand, With<GlobalRng>>,
+		mut res: LoadRes,
+	) {
+		**rng = event.random_state.clone();
 
-		params.commands.queue_spawn_scene(bsn! {
+		**res.score = event.score;
+		**res.next = res
+			.order
+			.get(event.next)
+			.cloned()
+			.expect("Unable to find fruit in order");
+
+		commands.queue_spawn_scene(bsn! {
 			@PlaceholderFruit {
-				@fruit: { data.placeholder },
-				@x: { params.placeholder_pos.x },
+				@fruit: { event.placeholder },
+				@x: { res.placeholder_pos.x },
 			}
 		});
 
-		for fruit in &data.fruits {
-			params.commands.queue_spawn_scene(bsn! {
+		for fruit in &event.fruits {
+			commands.queue_spawn_scene(bsn! {
 				@FruitBody {
-					@fruit: { fruit.fruit },
+					@fruit: { res.order.get(fruit.kind).cloned().expect("Unable to find fruit in order") },
 				}
 				CollisionEventsEnabled
 				template_value(fruit.transform)

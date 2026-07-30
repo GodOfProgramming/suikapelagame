@@ -2,11 +2,13 @@ use avian2d::debug_render::{PhysicsDebugPlugin, PhysicsGizmos};
 use beditor::{EditorExtension, EditorExtensionPlugin, EditorUi, prelude::uuid};
 use bevy::{color::palettes::tailwind::RED_500, ecs::system::SystemParam, prelude::*};
 use rand::seq::SliceRandom;
-use strum::IntoEnumIterator;
+use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use crate::{
 	GameState,
-	game::{FruitKind, archipelago::ApMessage, res::FruitOrder, termination::lose::LoseHeight},
+	game::{
+		Fruit, FruitKind, archipelago::ApMessage, res::FruitOrder, termination::lose::LoseHeight,
+	},
 };
 
 pub struct DebugPlugin;
@@ -39,7 +41,7 @@ struct DebugUi;
 struct DebugUiParams<'w, 's> {
 	commands: Commands<'w, 's>,
 
-	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static FruitKind)>,
+	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static Fruit)>,
 
 	game_state: Res<'w, State<GameState>>,
 	lose_height: Res<'w, LoseHeight>,
@@ -50,6 +52,7 @@ struct DebugUiParams<'w, 's> {
 	store: ResMut<'w, GizmoConfigStore>,
 
 	archipelago_message: Local<'s, String>,
+	shuffle_size: Local<'s, bool>,
 }
 
 impl EditorUi for DebugUi {
@@ -90,8 +93,9 @@ impl EditorUi for DebugUi {
 			ui.vertical(|ui| {
 				for (entity, tf, fruit) in params.q_fruits {
 					ui.label(format!(
-						"{fruit} ({entity}): {}",
-						tf.translation.y + fruit.radius()
+						"{} ({entity}): {}",
+						fruit.kind,
+						tf.translation.y + fruit.data.radius
 					));
 				}
 			});
@@ -110,10 +114,12 @@ impl EditorUi for DebugUi {
 		ui.separator();
 
 		if ui.button("Shuffle Fruit").clicked() {
-			params.fruit_order.order.shuffle(&mut rand::rng());
+			let mut order = params.fruit_order.order.clone().map(|f| f.kind);
+			order.shuffle(&mut rand::rng());
+			params.fruit_order.set_order(order, *params.shuffle_size);
 		}
 
-		ui.checkbox(&mut params.fruit_order.shuffle_size, "Shuffle Fruit Sizes");
+		ui.checkbox(&mut params.shuffle_size, "Shuffle Fruit Sizes");
 	}
 }
 

@@ -27,6 +27,7 @@ smol = "2.0.2"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 validator = { version = "0.20.0", features = ["derive"] }
+wyrand = "0.4.1"
 
 [build-dependencies]
 anyhow = "1.0"

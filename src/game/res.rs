@@ -1,3 +1,5 @@
+use crate::game::Fruit;
+
 use super::{FruitData, FruitKind};
 use bevy::prelude::*;
 use enum_map::{EnumMap, enum_map};
@@ -28,73 +30,103 @@ impl Score {
 	}
 }
 
-#[derive(Resource, Default, Deref, DerefMut)]
-pub struct NextFruit(FruitKind);
+#[derive(Resource, Deref, DerefMut)]
+pub struct NextFruit(Fruit);
+
+impl Default for NextFruit {
+	fn default() -> Self {
+		Self(Fruit::from(FruitKind::Cherry))
+	}
+}
 
 impl NextFruit {
-	pub fn get(&mut self, order: &FruitOrder, mut rng: impl Rng) -> FruitKind {
-		let next_fruit = order
-			.chooseable()
-			.collect::<Vec<_>>()
+	pub fn init(&mut self, order: &FruitOrder, mut rng: impl Rng) -> Fruit {
+		let weighted_fruits = order.chooseable().collect::<Vec<_>>();
+		let current_fruit = weighted_fruits
 			.choose_weighted(&mut rng, |c| c.1)
-			.map(|(f, _)| *f)
-			.unwrap_or_default();
-		let prev = self.0;
-		self.0 = next_fruit;
+			.map(|(f, _)| f)
+			.expect("At least one fruit must be chooseable");
+		let next_fruit = weighted_fruits
+			.choose_weighted(&mut rng, |c| c.1)
+			.map(|(f, _)| f)
+			.expect("At least one fruit must be chooseable");
+		self.0 = Fruit::clone(next_fruit);
+		Fruit::clone(current_fruit)
+	}
+
+	pub fn get(&mut self, order: &FruitOrder, mut rng: impl Rng) -> Fruit {
+		let weighted_fruits = order.chooseable().collect::<Vec<_>>();
+		let next_fruit = weighted_fruits
+			.choose_weighted(&mut rng, |c| c.1)
+			.map(|(f, _)| f)
+			.expect("At least one fruit must be chooseable");
+		let prev = self.0.clone();
+		self.0 = Fruit::clone(next_fruit);
 		prev
 	}
 }
 
-#[derive(Resource)]
+#[derive(Resource, Reflect)]
+#[reflect(Resource)]
 pub struct FruitOrder {
-	pub order: [FruitKind; FruitKind::COUNT],
-	pub shuffle_size: bool,
+	pub order: [Fruit; FruitKind::COUNT],
 }
 
 impl Default for FruitOrder {
 	fn default() -> Self {
 		Self {
-			order: FruitKind::VARIANTS.try_into().unwrap(),
-			shuffle_size: false,
+			order: FruitKind::VARIANTS
+				.iter()
+				.map(|f| Fruit {
+					kind: *f,
+					data: f.data(),
+				})
+				.collect::<Vec<_>>()
+				.try_into()
+				.unwrap(),
 		}
 	}
 }
 
 impl FruitOrder {
-	pub fn chooseable(&self) -> impl Iterator<Item = (FruitKind, usize)> {
-		self
-			.order
-			.into_iter()
-			.filter_map(|f| f.weight().map(|w| (f, w)))
+	pub fn set_order(&mut self, order: [FruitKind; FruitKind::COUNT], retain_size: bool) {
+		for (i, f) in order.into_iter().enumerate() {
+			let original = FruitKind::from_repr(i).unwrap();
+			let og_dat = original.data();
+			let radius = if retain_size {
+				f.radius()
+			} else {
+				og_dat.radius
+			};
+			self.order[i] = Fruit {
+				kind: f,
+				data: FruitData {
+					radius,
+					weight: og_dat.weight,
+					..f.data()
+				},
+			};
+		}
 	}
 
-	pub fn next(&self, current: FruitKind) -> Option<(FruitKind, FruitData)> {
+	pub fn chooseable(&self) -> impl Iterator<Item = (&Fruit, usize)> {
+		self
+			.order
+			.iter()
+			.filter_map(|f| f.data.weight.map(|w| (f, w)))
+	}
+
+	pub fn next(&self, current: FruitKind) -> Option<&Fruit> {
 		self
 			.order
 			.iter()
 			.enumerate()
-			.find_map(|(i, f)| (*f == current).then_some(i))
-			.and_then(|i| {
-				if self.shuffle_size {
-					self.order.get(i + 1).map(|f| (*f, f.data()))
-				} else {
-					let next = i + 1;
-					self
-						.order
-						.get(next)
-						.zip(FruitKind::from_repr(next))
-						.map(|(order_next, real_next)| {
-							let data = real_next.data();
-							(
-								*order_next,
-								FruitData {
-									sprite: order_next.sprite(),
-									..data
-								},
-							)
-						})
-				}
-			})
+			.find_map(|(i, f)| (f.kind == current).then_some(i))
+			.and_then(|i| self.order.get(i + 1))
+	}
+
+	pub fn get(&self, fruit: FruitKind) -> Option<&Fruit> {
+		self.order.iter().find(|f| f.kind == fruit)
 	}
 }
 

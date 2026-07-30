@@ -14,9 +14,9 @@ use bevy::{
 
 const LINE_HEIGHT: f32 = 16.0;
 
-pub struct ApChatPlugin;
+pub struct ChatPlugin;
 
-impl Plugin for ApChatPlugin {
+impl Plugin for ChatPlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.init_resource::<QueuedMessages>()

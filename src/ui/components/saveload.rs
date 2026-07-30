@@ -1,6 +1,9 @@
 use crate::{
 	component_name,
-	game::persistence::{LoadSaveFile, SaveGame},
+	game::{
+		evt::NewGame,
+		persistence::{LoadSaveFile, SaveGame},
+	},
 	ui::components::AppButton,
 };
 use bevy::prelude::*;
@@ -19,6 +22,7 @@ impl SaveLoadComponent {
 			Children [
 				@SaveButton,
 				@LoadButton,
+				@ResetButton,
 			]
 		}
 	}
@@ -51,6 +55,22 @@ impl LoadButton {
 			Children [ Text::new("Load") TextColor::BLACK ]
 			on(|_: On<Pointer<Click>>, mut commands: Commands| {
 				commands.trigger(LoadSaveFile);
+			})
+		}
+	}
+}
+
+#[derive(SceneComponent, Default, Clone)]
+struct ResetButton;
+
+impl ResetButton {
+	fn scene() -> impl Scene {
+		bsn! {
+			@AppButton
+			Node { justify_content: JustifyContent::Center }
+			Children [ Text::new("Reset") TextColor::BLACK ]
+			on(|_: On<Pointer<Click>>, mut commands: Commands| {
+				commands.trigger(NewGame);
 			})
 		}
 	}

@@ -8,8 +8,8 @@ use crate::{
 		evt::{DropPlaceholder, MovePlaceholder},
 	},
 	ui::components::{
-		appzone,
-		chat::{ApChatPlugin, ChatComponent},
+		AppButton, appzone,
+		chat::{ChatComponent, ChatPlugin},
 		fruit_circle::FruitCirclePlugin,
 		lose_popup::LosePopupPlugin,
 		next_fruit::NextFruitPlugin,
@@ -54,7 +54,7 @@ impl Plugin for UiPlugin {
 				ScorePlugin,
 				WinPopupPlugin,
 				LosePopupPlugin,
-				ApChatPlugin,
+				ChatPlugin,
 				FruitCirclePlugin,
 			))
 			.add_systems(Startup, GameUi::scene.spawn())
@@ -315,6 +315,6 @@ fn add_player_ui(mut commands: Commands, left: Single<Entity, With<LeftZone>>) {
 		} ChildOf({*left}),
 		@SaveLoadComponent Node {
 			width: percent(100)
-		} ChildOf({*left})
+		} ChildOf({*left}),
 	]);
 }
