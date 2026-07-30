@@ -1,11 +1,12 @@
 use avian2d::debug_render::{PhysicsDebugPlugin, PhysicsGizmos};
 use beditor::{EditorExtension, EditorExtensionPlugin, EditorUi, prelude::uuid};
 use bevy::{color::palettes::tailwind::RED_500, ecs::system::SystemParam, prelude::*};
+use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 
 use crate::{
 	GameState,
-	game::{Fruit, archipelago::ApMessage, termination::lose::LoseHeight},
+	game::{Fruit, archipelago::ApMessage, res::FruitOrder, termination::lose::LoseHeight},
 };
 
 pub struct DebugPlugin;
@@ -37,11 +38,16 @@ struct DebugUi;
 #[derive(SystemParam)]
 struct DebugUiParams<'w, 's> {
 	commands: Commands<'w, 's>,
-	store: ResMut<'w, GizmoConfigStore>,
-	game_state: Res<'w, State<GameState>>,
-	next_game_state: ResMut<'w, NextState<GameState>>,
+
 	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static Fruit)>,
+
+	game_state: Res<'w, State<GameState>>,
 	lose_height: Res<'w, LoseHeight>,
+
+	fruit_order: ResMut<'w, FruitOrder>,
+	next_game_state: ResMut<'w, NextState<GameState>>,
+
+	store: ResMut<'w, GizmoConfigStore>,
 
 	archipelago_message: Local<'s, String>,
 }
@@ -100,6 +106,14 @@ impl EditorUi for DebugUi {
 				.commands
 				.queue(ApMessage::new(&*params.archipelago_message));
 		}
+
+		ui.separator();
+
+		if ui.button("Shuffle Fruit").clicked() {
+			params.fruit_order.order.shuffle(&mut rand::rng());
+		}
+
+		ui.checkbox(&mut params.fruit_order.shuffle_size, "Shuffle Fruit Sizes");
 	}
 }
 

@@ -46,7 +46,7 @@ pub struct FruitBodyProps {
 
 impl FruitBody {
 	fn scene(props: FruitBodyProps) -> impl Scene {
-		let data = props.custom.unwrap_or_else(|| *props.fruit.data());
+		let data = props.custom.unwrap_or_else(|| props.fruit.data());
 
 		bsn! {
 			Name::new(props.fruit.to_string())

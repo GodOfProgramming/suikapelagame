@@ -1,7 +1,10 @@
 use super::{Fruit, FruitData};
 use bevy::prelude::*;
 use enum_map::{EnumMap, enum_map};
-use rand::{Rng, seq::IndexedRandom};
+use rand::{
+	Rng,
+	seq::{IndexedRandom, SliceRandom},
+};
 use strum::{EnumCount, VariantArray};
 
 pub struct ResPlugin;
@@ -50,7 +53,7 @@ impl NextFruit {
 #[derive(Resource)]
 pub struct FruitOrder {
 	pub order: [Fruit; Fruit::COUNT],
-	shuffle_size: bool,
+	pub shuffle_size: bool,
 }
 
 impl Default for FruitOrder {
@@ -75,7 +78,7 @@ impl FruitOrder {
 			.find_map(|(i, f)| (*f == current).then_some(i))
 			.and_then(|i| {
 				if self.shuffle_size {
-					self.order.get(i + 1).map(|f| (*f, *f.data()))
+					self.order.get(i + 1).map(|f| (*f, f.data()))
 				} else {
 					let next = i + 1;
 					self
@@ -88,7 +91,7 @@ impl FruitOrder {
 								*order_next,
 								FruitData {
 									sprite: order_next.sprite(),
-									..*data
+									..data
 								},
 							)
 						})

@@ -130,77 +130,6 @@ fn move_placeholder_location(
 	}
 }
 
-static DATA_MAP: LazyLock<EnumMap<Fruit, FruitData>> = LazyLock::new(|| {
-	enum_map! {
-		Fruit::Cherry => FruitData {
-			radius: 24.0,
-			value: 1,
-			sprite: "binary/fruit/cherry.png",
-			weight: Some(447),
-		},
-		Fruit::Strawberry => FruitData {
-			radius: 32.0,
-			value: 3,
-			sprite: "binary/fruit/strawberry.png",
-			weight: Some(185),
-		},
-		Fruit::Grapes => FruitData {
-			radius: 40.0,
-			value: 6,
-			sprite: "binary/fruit/grape.png",
-			weight: Some(142),
-		},
-		Fruit::Dekopon => FruitData {
-			radius: 56.0,
-			value: 10,
-			sprite: "binary/fruit/dekopon.png",
-			weight: Some(120),
-		},
-		Fruit::Persimmon => FruitData {
-			radius: 64.0,
-			value: 15,
-			sprite: "binary/fruit/persimmon.png",
-			weight: Some(106),
-		},
-		Fruit::Apple => FruitData {
-			radius: 72.0,
-			value: 21,
-			sprite: "binary/fruit/apple.png",
-			weight: None,
-		},
-		Fruit::Pear => FruitData {
-			radius: 84.0,
-			value: 28,
-			sprite: "binary/fruit/pear.png",
-			weight: None,
-		},
-		Fruit::Peach => FruitData {
-			radius: 96.0,
-			value: 36,
-			sprite: "binary/fruit/peach.png",
-			weight: None,
-		},
-		Fruit::Pineapple => FruitData {
-			radius: 128.0,
-			value: 45,
-			sprite: "binary/fruit/pineapple.png",
-			weight: None,
-		},
-		Fruit::Melon => FruitData {
-			radius: 160.0,
-			value: 55,
-			sprite: "binary/fruit/melon.png",
-			weight: None,
-		},
-		Fruit::Watermelon => FruitData {
-			radius: 192.0,
-			value: 66,
-			sprite: "binary/fruit/watermelon.png",
-			weight: None,
-		},
-	}
-});
-
 fn on_collisions(
 	mut commands: Commands,
 	mut messages: MessageReader<CollisionStart>,
@@ -341,24 +270,91 @@ pub struct FruitData {
 }
 
 impl Fruit {
-	fn data(self) -> &'static FruitData {
-		&DATA_MAP[self]
+	fn data(self) -> FruitData {
+		match self {
+			Fruit::Cherry => FruitData {
+				radius: 24.0,
+				value: 1,
+				sprite: "binary/fruit/cherry.png",
+				weight: Some(447),
+			},
+			Fruit::Strawberry => FruitData {
+				radius: 32.0,
+				value: 3,
+				sprite: "binary/fruit/strawberry.png",
+				weight: Some(185),
+			},
+			Fruit::Grapes => FruitData {
+				radius: 40.0,
+				value: 6,
+				sprite: "binary/fruit/grape.png",
+				weight: Some(142),
+			},
+			Fruit::Dekopon => FruitData {
+				radius: 56.0,
+				value: 10,
+				sprite: "binary/fruit/dekopon.png",
+				weight: Some(120),
+			},
+			Fruit::Persimmon => FruitData {
+				radius: 64.0,
+				value: 15,
+				sprite: "binary/fruit/persimmon.png",
+				weight: Some(106),
+			},
+			Fruit::Apple => FruitData {
+				radius: 72.0,
+				value: 21,
+				sprite: "binary/fruit/apple.png",
+				weight: None,
+			},
+			Fruit::Pear => FruitData {
+				radius: 84.0,
+				value: 28,
+				sprite: "binary/fruit/pear.png",
+				weight: None,
+			},
+			Fruit::Peach => FruitData {
+				radius: 96.0,
+				value: 36,
+				sprite: "binary/fruit/peach.png",
+				weight: None,
+			},
+			Fruit::Pineapple => FruitData {
+				radius: 128.0,
+				value: 45,
+				sprite: "binary/fruit/pineapple.png",
+				weight: None,
+			},
+			Fruit::Melon => FruitData {
+				radius: 160.0,
+				value: 55,
+				sprite: "binary/fruit/melon.png",
+				weight: None,
+			},
+			Fruit::Watermelon => FruitData {
+				radius: 192.0,
+				value: 66,
+				sprite: "binary/fruit/watermelon.png",
+				weight: None,
+			},
+		}
 	}
 
 	pub fn radius(self) -> f32 {
-		DATA_MAP[self].radius
+		self.data().radius
 	}
 
 	pub fn value(self) -> usize {
-		DATA_MAP[self].value
+		self.data().value
 	}
 
 	pub fn sprite(self) -> &'static str {
-		DATA_MAP[self].sprite
+		self.data().sprite
 	}
 
 	pub fn weight(self) -> Option<usize> {
-		DATA_MAP[self].weight
+		self.data().weight
 	}
 
 	pub fn next(self) -> Option<Self> {
