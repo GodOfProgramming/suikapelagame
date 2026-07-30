@@ -1,10 +1,10 @@
-use super::{Fruit, FruitData};
+use super::{FruitData, FruitKind};
 use crate::game::{
 	cmp::Invincible,
-	res::{FruitDropDelay, NextFruit, PlaceholderPosition, StaticAssets},
+	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, StaticAssets},
 	scn::{FruitBody, PlaceholderFruit},
 };
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
 
@@ -20,20 +20,26 @@ impl MovePlaceholder {
 #[derive(Event, Clone)]
 pub struct DropPlaceholder;
 
+#[derive(SystemParam)]
+pub struct DropPlaceholderRes<'w> {
+	next_fruit: ResMut<'w, NextFruit>,
+	static_assets: Res<'w, StaticAssets>,
+	placeholder_pos: Res<'w, PlaceholderPosition>,
+	delay: Res<'w, FruitDropDelay>,
+	order: Res<'w, FruitOrder>,
+	time: Res<'w, Time>,
+}
+
 impl DropPlaceholder {
 	pub fn handle(
 		_: On<Self>,
 		mut commands: Commands,
-		placeholder: Single<(Entity, &Fruit, &Transform), With<PlaceholderFruit>>,
+		placeholder: Single<(Entity, &FruitKind, &Transform), With<PlaceholderFruit>>,
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
-		mut next_fruit: ResMut<NextFruit>,
-		static_assets: Res<StaticAssets>,
-		placeholder_pos: Res<PlaceholderPosition>,
-		delay: Res<FruitDropDelay>,
-		time: Res<Time>,
+		mut res: DropPlaceholderRes,
 	) {
 		let (entity, fruit, tf) = *placeholder;
-		let elapsed = time.elapsed_secs();
+		let elapsed = res.time.elapsed_secs();
 		commands
 			.entity(entity)
 			.remove::<PlaceholderFruit>()
@@ -46,24 +52,27 @@ impl DropPlaceholder {
 			});
 
 		commands.spawn((
-			AudioPlayer::new(static_assets.click.clone()),
+			AudioPlayer::new(res.static_assets.click.clone()),
 			PlaybackSettings::DESPAWN,
 		));
 
-		let fruit = next_fruit.next(&mut rng);
+		let fruit = res.next_fruit.get(&res.order, &mut rng);
 
-		commands.delayed().secs(**delay).queue_spawn_scene(bsn! {
-			@PlaceholderFruit {
-				@fruit: fruit,
-				@x: { placeholder_pos.x },
-			}
-		});
+		commands
+			.delayed()
+			.secs(**res.delay)
+			.queue_spawn_scene(bsn! {
+				@PlaceholderFruit {
+					@fruit: fruit,
+					@x: { res.placeholder_pos.x },
+				}
+			});
 	}
 }
 
 #[derive(Event)]
 pub struct SpawnFruit {
-	pub fruit: Fruit,
+	pub fruit: FruitKind,
 	pub data: FruitData,
 	pub position: Vec2,
 	pub invincibility: f32,

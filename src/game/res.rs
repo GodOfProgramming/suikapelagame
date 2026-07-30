@@ -1,10 +1,7 @@
-use super::{Fruit, FruitData};
+use super::{FruitData, FruitKind};
 use bevy::prelude::*;
 use enum_map::{EnumMap, enum_map};
-use rand::{
-	Rng,
-	seq::{IndexedRandom, SliceRandom},
-};
+use rand::{Rng, seq::IndexedRandom};
 use strum::{EnumCount, VariantArray};
 
 pub struct ResPlugin;
@@ -32,14 +29,12 @@ impl Score {
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-pub struct NextFruit(Fruit);
+pub struct NextFruit(FruitKind);
 
 impl NextFruit {
-	pub fn next(&mut self, mut rng: impl Rng) -> Fruit {
-		let next_fruit = Fruit::VARIANTS
-			.iter()
-			.cloned()
-			.filter_map(|f| f.weight().map(|w| (f, w)))
+	pub fn get(&mut self, order: &FruitOrder, mut rng: impl Rng) -> FruitKind {
+		let next_fruit = order
+			.chooseable()
 			.collect::<Vec<_>>()
 			.choose_weighted(&mut rng, |c| c.1)
 			.map(|(f, _)| *f)
@@ -52,25 +47,28 @@ impl NextFruit {
 
 #[derive(Resource)]
 pub struct FruitOrder {
-	pub order: [Fruit; Fruit::COUNT],
+	pub order: [FruitKind; FruitKind::COUNT],
 	pub shuffle_size: bool,
 }
 
 impl Default for FruitOrder {
 	fn default() -> Self {
 		Self {
-			order: Fruit::VARIANTS.try_into().unwrap(),
+			order: FruitKind::VARIANTS.try_into().unwrap(),
 			shuffle_size: false,
 		}
 	}
 }
 
 impl FruitOrder {
-	pub fn order(&self) -> [Fruit; Fruit::COUNT] {
-		self.order
+	pub fn chooseable(&self) -> impl Iterator<Item = (FruitKind, usize)> {
+		self
+			.order
+			.into_iter()
+			.filter_map(|f| f.weight().map(|w| (f, w)))
 	}
 
-	pub fn next(&self, current: Fruit) -> Option<(Fruit, FruitData)> {
+	pub fn next(&self, current: FruitKind) -> Option<(FruitKind, FruitData)> {
 		self
 			.order
 			.iter()
@@ -84,7 +82,7 @@ impl FruitOrder {
 					self
 						.order
 						.get(next)
-						.zip(Fruit::from_repr(next))
+						.zip(FruitKind::from_repr(next))
 						.map(|(order_next, real_next)| {
 							let data = real_next.data();
 							(
@@ -128,7 +126,7 @@ pub struct PlaceholderPosition(pub Vec2);
 pub struct StaticAssets {
 	pub pop: Handle<Image>,
 	pub click: Handle<AudioSource>,
-	pub fruit_pops: EnumMap<Fruit, Handle<AudioSource>>,
+	pub fruit_pops: EnumMap<FruitKind, Handle<AudioSource>>,
 }
 
 impl FromWorld for StaticAssets {
@@ -137,17 +135,17 @@ impl FromWorld for StaticAssets {
 			pop: world.load_asset("binary/pop.png"),
 			click: world.load_asset("binary/audio/click.mp3"),
 			fruit_pops: enum_map! {
-				Fruit::Cherry => world.load_asset("binary/audio/cherry.mp3"),
-				Fruit::Strawberry => world.load_asset("binary/audio/strawberry.mp3"),
-				Fruit::Grapes => world.load_asset("binary/audio/grape.mp3"),
-				Fruit::Dekopon => world.load_asset("binary/audio/dekopon.mp3"),
-				Fruit::Persimmon => world.load_asset("binary/audio/persimmon.mp3"),
-				Fruit::Apple => world.load_asset("binary/audio/apple.mp3"),
-				Fruit::Pear => world.load_asset("binary/audio/pear.mp3"),
-				Fruit::Peach => world.load_asset("binary/audio/peach.mp3"),
-				Fruit::Pineapple => world.load_asset("binary/audio/pineapple.mp3"),
-				Fruit::Melon => world.load_asset("binary/audio/melon.mp3"),
-				Fruit::Watermelon => world.load_asset("binary/audio/watermelon.mp3"),
+				FruitKind::Cherry => world.load_asset("binary/audio/cherry.mp3"),
+				FruitKind::Strawberry => world.load_asset("binary/audio/strawberry.mp3"),
+				FruitKind::Grapes => world.load_asset("binary/audio/grape.mp3"),
+				FruitKind::Dekopon => world.load_asset("binary/audio/dekopon.mp3"),
+				FruitKind::Persimmon => world.load_asset("binary/audio/persimmon.mp3"),
+				FruitKind::Apple => world.load_asset("binary/audio/apple.mp3"),
+				FruitKind::Pear => world.load_asset("binary/audio/pear.mp3"),
+				FruitKind::Peach => world.load_asset("binary/audio/peach.mp3"),
+				FruitKind::Pineapple => world.load_asset("binary/audio/pineapple.mp3"),
+				FruitKind::Melon => world.load_asset("binary/audio/melon.mp3"),
+				FruitKind::Watermelon => world.load_asset("binary/audio/watermelon.mp3"),
 			},
 		}
 	}

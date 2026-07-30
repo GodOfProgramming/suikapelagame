@@ -1,4 +1,4 @@
-use super::Fruit;
+use super::FruitKind;
 use archipelago_rs::Client;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ unsafe impl Sync for ApClient {}
 #[derive(Debug, Default, Serialize, Deserialize, Validate)]
 pub struct SessionData {
 	pub deathlink: bool,
-	pub shuffle_fruit: Option<[Fruit; Fruit::COUNT]>,
+	pub shuffle_fruit: Option<[FruitKind; FruitKind::COUNT]>,
 	pub also_shuffle_sizes: bool,
 	#[validate(range(min = 0, max = 10))]
 	pub height_upgrade_count: usize,

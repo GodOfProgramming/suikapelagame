@@ -1,4 +1,4 @@
-use super::Fruit;
+use super::FruitKind;
 use crate::game::{
 	cmp::{FruitValue, Invincible},
 	res::{NextFruit, PlaceholderPosition, Score},
@@ -28,7 +28,7 @@ impl Plugin for PersistencePlugin {
 
 #[derive(QueryData)]
 struct FruitDataToSave {
-	fruit: &'static Fruit,
+	fruit: &'static FruitKind,
 	transform: &'static Transform,
 	linear_velocity: &'static LinearVelocity,
 	angular_velocity: &'static AngularVelocity,
@@ -40,7 +40,7 @@ struct FruitDataToSave {
 #[derive(SystemParam)]
 struct SaveParams<'w, 's> {
 	score: Res<'w, Score>,
-	placeholder: Single<'w, 's, &'static Fruit, With<PlaceholderFruit>>,
+	placeholder: Single<'w, 's, &'static FruitKind, With<PlaceholderFruit>>,
 	next: Res<'w, NextFruit>,
 	rng: Single<'w, 's, &'static WyRand, With<GlobalRng>>,
 	fruits: Query<'w, 's, FruitDataToSave, Without<PlaceholderFruit>>,
@@ -99,7 +99,7 @@ impl SaveGame {
 pub struct LoadSaveFile;
 
 impl LoadSaveFile {
-	fn handle(_: On<Self>, mut commands: Commands, q_fruits: Query<Entity, With<Fruit>>) {
+	fn handle(_: On<Self>, mut commands: Commands, q_fruits: Query<Entity, With<FruitKind>>) {
 		for fruit in q_fruits {
 			commands.entity(fruit).despawn();
 		}
@@ -138,15 +138,15 @@ impl LoadSaveFile {
 #[derive(Serialize, Deserialize)]
 struct SaveGameData {
 	score: usize,
-	placeholder: Fruit,
-	next: Fruit,
+	placeholder: FruitKind,
+	next: FruitKind,
 	random_state: WyRand,
 	fruits: Vec<FruitSaveData>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct FruitSaveData {
-	fruit: Fruit,
+	fruit: FruitKind,
 	transform: Transform,
 	linear_velocity: LinearVelocity,
 	angular_velocity: AngularVelocity,

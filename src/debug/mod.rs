@@ -6,7 +6,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
 	GameState,
-	game::{Fruit, archipelago::ApMessage, res::FruitOrder, termination::lose::LoseHeight},
+	game::{FruitKind, archipelago::ApMessage, res::FruitOrder, termination::lose::LoseHeight},
 };
 
 pub struct DebugPlugin;
@@ -39,7 +39,7 @@ struct DebugUi;
 struct DebugUiParams<'w, 's> {
 	commands: Commands<'w, 's>,
 
-	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static Fruit)>,
+	q_fruits: Query<'w, 's, (Entity, &'static Transform, &'static FruitKind)>,
 
 	game_state: Res<'w, State<GameState>>,
 	lose_height: Res<'w, LoseHeight>,

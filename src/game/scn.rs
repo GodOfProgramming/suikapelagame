@@ -1,4 +1,4 @@
-use super::{Fruit, FruitData, WORLD_DIM};
+use super::{FruitKind, FruitData, WORLD_DIM};
 use crate::{component_name, game::cmp::FruitValue, ui::RENDER_SCALE};
 use avian2d::prelude::*;
 use bevy::prelude::*;
@@ -12,7 +12,7 @@ pub struct PlaceholderFruit;
 
 #[derive(Default)]
 pub struct PlaceholderFruitProps {
-	pub fruit: Fruit,
+	pub fruit: FruitKind,
 	pub x: f32,
 }
 
@@ -39,7 +39,7 @@ pub struct FruitBody;
 
 #[derive(Default)]
 pub struct FruitBodyProps {
-	pub fruit: Fruit,
+	pub fruit: FruitKind,
 	pub position: Vec2,
 	pub custom: Option<FruitData>,
 }

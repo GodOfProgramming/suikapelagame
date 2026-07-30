@@ -1,12 +1,12 @@
 use super::FruitImage;
 use crate::{
 	component_name,
-	game::{Fruit, res::FruitOrder},
+	game::{FruitKind, res::FruitOrder},
 };
 use bevy::prelude::*;
 use strum::{EnumCount, VariantArray};
 
-const DEGREE_MAP: [f32; Fruit::COUNT] = [
+const DEGREE_MAP: [f32; FruitKind::COUNT] = [
 	60.0, 30.0, 0.0, 330.0, 300.0, 270.0, 240.0, 210.0, 180.0, 150.0, 120.0,
 ];
 
@@ -33,13 +33,13 @@ impl FruitCircleComponent {
 				 aspect_ratio: { Some(1.0) }
 			}
 			Children [
-				{ fruit_order_scene(Fruit::VARIANTS.try_into().unwrap()) }
+				{ fruit_order_scene(FruitKind::VARIANTS.try_into().unwrap()) }
 			]
 		}
 	}
 }
 
-pub fn fruit_order_scene(fruits: [Fruit; Fruit::COUNT]) -> impl SceneList {
+pub fn fruit_order_scene(fruits: [FruitKind; FruitKind::COUNT]) -> impl SceneList {
 	bsn_list![{
 		fruits
 			.iter()
@@ -67,6 +67,6 @@ fn on_fruit_order_change(
 		commands
 			.entity(fruit_circle)
 			.despawn_children()
-			.queue_spawn_related_scenes::<Children>(fruit_order_scene(fruit_order.order()));
+			.queue_spawn_related_scenes::<Children>(fruit_order_scene(fruit_order.order));
 	}
 }
