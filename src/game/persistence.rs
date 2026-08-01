@@ -1,7 +1,10 @@
 use super::FruitKind;
 use crate::game::{
 	Fruit,
-	archipelago::{ApClient, BlindnessTrap, BlindnessTurns, SecrecyTrap, SecrecyTurns},
+	archipelago::{
+		ApClient,
+		traps::{BlindnessTrap, BlindnessTurns, SecrecyTrap, SecrecyTurns},
+	},
 	cmp::Invincible,
 	res::{FruitOrder, NextFruit, PlaceholderPosition, Score},
 	scn::{FruitBody, PlaceholderFruit},

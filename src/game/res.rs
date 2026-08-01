@@ -134,13 +134,33 @@ impl FruitOrder {
 	}
 }
 
-#[derive(Resource, Reflect, Deref)]
+#[derive(Resource, Reflect)]
 #[reflect(Resource)]
-pub struct FruitDropDelay(f32);
+pub struct FruitDropDelay {
+	pub additional_cooldown: f32,
+	upgrades: usize,
+	pub max_upgrades: usize,
+}
 
 impl Default for FruitDropDelay {
 	fn default() -> Self {
-		Self(0.5)
+		Self {
+			additional_cooldown: 0.0,
+			upgrades: 0,
+			max_upgrades: 0,
+		}
+	}
+}
+
+impl FruitDropDelay {
+	pub fn delay(&self) -> f32 {
+		let additional = if self.max_upgrades != 0 {
+			(self.max_upgrades as f32 - self.upgrades as f32) / self.max_upgrades as f32
+				* self.additional_cooldown
+		} else {
+			0.0
+		};
+		0.5 + additional
 	}
 }
 

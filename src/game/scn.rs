@@ -129,6 +129,17 @@ pub fn level() -> impl Scene {
 				}
 			},
 			@AreaBound {
+				@name: "Top",
+				@location: Vec2 {
+					x: 0.0,
+					y: {  WORLD_DIM.y / 2.0 - WALL_PAD / 2.0  },
+				},
+				@size: Vec2 {
+					x:  { WORLD_DIM.x + WALL_PAD * 2.0 },
+					y:  WALL_PAD
+				}
+			},
+			@AreaBound {
 				@name: "Bottom",
 				@location: Vec2 {
 					x: 0.0,

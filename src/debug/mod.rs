@@ -8,7 +8,10 @@ use crate::{
 	GameState,
 	game::{
 		Fruit,
-		archipelago::{ApMessage, BlindnessTrap},
+		archipelago::{
+			ApMessage,
+			traps::{BlindnessTrap, ImpulseTrap},
+		},
 		res::FruitOrder,
 		termination::lose::LoseHeight,
 	},
@@ -128,6 +131,10 @@ impl EditorUi for DebugUi {
 
 		if ui.button("Trigger Blindness").clicked() {
 			params.commands.trigger(BlindnessTrap(3));
+		}
+
+		if ui.button("Trigger Impulse").clicked() {
+			params.commands.trigger(ImpulseTrap);
 		}
 	}
 }

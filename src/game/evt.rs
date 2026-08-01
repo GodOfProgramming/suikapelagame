@@ -28,7 +28,7 @@ pub struct DropPlaceholderRes<'w> {
 	next_fruit: ResMut<'w, NextFruit>,
 	static_assets: Res<'w, StaticAssets>,
 	placeholder_pos: Res<'w, PlaceholderPosition>,
-	delay: Res<'w, FruitDropDelay>,
+	drop_delay: Res<'w, FruitDropDelay>,
 	order: Res<'w, FruitOrder>,
 	time: Res<'w, Time>,
 }
@@ -63,7 +63,7 @@ impl DropPlaceholder {
 
 		commands
 			.delayed()
-			.secs(**res.delay)
+			.secs(res.drop_delay.delay())
 			.queue_spawn_scene(bsn! {
 				@PlaceholderFruit {
 					@fruit: fruit,
@@ -109,6 +109,7 @@ pub struct NewGameRes<'w> {
 	next_fruit: ResMut<'w, NextFruit>,
 	placeholder_position: Res<'w, PlaceholderPosition>,
 	lose_height: ResMut<'w, LoseHeight>,
+	drop_delay: ResMut<'w, FruitDropDelay>,
 }
 
 impl NewGame {
@@ -148,5 +149,8 @@ impl NewGame {
 		}
 
 		res.lose_height.max_upgrades = session_data.height_upgrade_count;
+
+		res.drop_delay.additional_cooldown = session_data.starting_cooldown as f32;
+		res.drop_delay.max_upgrades = session_data.cooldown_upgrade_count;
 	}
 }
