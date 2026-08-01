@@ -4,7 +4,7 @@ use super::FruitKind;
 use crate::game::{
 	archipelago::traps::{BlindnessTrap, ImpulseTrap, SecrecyTrap, ShuffleTrap, ThanosTrap},
 	evt::DropPlaceholder,
-	res::Score,
+	res::{FruitDropDelay, Score},
 	termination::lose::{Lose, LoseHeight},
 };
 use archipelago_rs::Client;
@@ -26,6 +26,8 @@ impl Plugin for ArchipelagoPlugin {
 			.add_observer(archipelago_error_handler)
 			.add_observer(ReceivedItem::handle)
 			.add_observer(ProgressiveHeightItem::handle)
+			.add_observer(BonusPoints::handle)
+			.add_observer(CooldownUpgrade::handle)
 			.add_systems(
 				FixedUpdate,
 				receive_archipelago_events.run_if(resource_exists::<ApClient>),
@@ -196,7 +198,7 @@ impl ReceivedItem {
 			ApItem::ProgressiveHeight => commands.trigger(ProgressiveHeightItem(1)),
 			ApItem::ProgressiveFruit => (),
 			ApItem::ProgressiveNext => (),
-			ApItem::UsefulDropCooldown => (),
+			ApItem::UsefulDropCooldown => commands.trigger(CooldownUpgrade(1)),
 			ApItem::UsefulPoints => commands.trigger(BonusPoints(50)),
 			ApItem::TrapInstaDrop => commands.trigger(DropPlaceholder),
 			ApItem::TrapShuffle => commands.trigger(ShuffleTrap),
@@ -224,5 +226,14 @@ struct BonusPoints(usize);
 impl BonusPoints {
 	fn handle(event: On<Self>, mut score: ResMut<Score>) {
 		**score += event.0;
+	}
+}
+
+#[derive(Event)]
+struct CooldownUpgrade(usize);
+
+impl CooldownUpgrade {
+	fn handle(event: On<Self>, mut drop_delay: ResMut<FruitDropDelay>) {
+		drop_delay.add_upgrades(event.0);
 	}
 }

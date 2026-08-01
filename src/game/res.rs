@@ -153,6 +153,10 @@ impl Default for FruitDropDelay {
 }
 
 impl FruitDropDelay {
+	pub fn add_upgrades(&mut self, upgrades: usize) {
+		self.upgrades += upgrades;
+	}
+
 	pub fn delay(&self) -> f32 {
 		let additional = if self.max_upgrades != 0 {
 			(self.max_upgrades as f32 - self.upgrades as f32) / self.max_upgrades as f32
