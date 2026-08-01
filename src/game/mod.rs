@@ -92,8 +92,9 @@ fn init_gameplay(
 }
 
 fn draw_gizmos(mut gizmos: Gizmos<GameGizmos>, end_height: Res<LoseHeight>) {
-	let left = Vec2::new(-WORLD_DIM.x * 2.0, **end_height);
-	let right = Vec2::new(WORLD_DIM.x * 2.0, **end_height);
+	let height = end_height.height();
+	let left = Vec2::new(-WORLD_DIM.x * 2.0, height);
+	let right = Vec2::new(WORLD_DIM.x * 2.0, height);
 	gizmos.line_2d(left, right, Color::BLACK);
 }
 

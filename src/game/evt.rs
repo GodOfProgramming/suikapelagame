@@ -4,6 +4,7 @@ use crate::game::{
 	cmp::Invincible,
 	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score, StaticAssets},
 	scn::{FruitBody, PlaceholderFruit},
+	termination::lose::LoseHeight,
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_prng::WyRand;
@@ -69,8 +70,13 @@ impl DropPlaceholder {
 					@x: { res.placeholder_pos.x },
 				}
 			});
+
+		commands.trigger(PlaceholderDropped);
 	}
 }
+
+#[derive(Event)]
+pub struct PlaceholderDropped;
 
 #[derive(Event)]
 pub struct SpawnFruit {
@@ -96,12 +102,13 @@ impl SpawnFruit {
 pub struct NewGame;
 
 #[derive(SystemParam)]
-pub struct ResetGameRes<'w> {
+pub struct NewGameRes<'w> {
 	score: ResMut<'w, Score>,
 	fruit_order: ResMut<'w, FruitOrder>,
 	apclient: Option<Res<'w, ApClient>>,
 	next_fruit: ResMut<'w, NextFruit>,
 	placeholder_position: Res<'w, PlaceholderPosition>,
+	lose_height: ResMut<'w, LoseHeight>,
 }
 
 impl NewGame {
@@ -110,7 +117,7 @@ impl NewGame {
 		mut commands: Commands,
 		q_fruits: Query<Entity, With<Fruit>>,
 		mut rng: Single<&mut WyRand, With<GlobalRng>>,
-		mut res: ResetGameRes,
+		mut res: NewGameRes,
 	) {
 		for entity in q_fruits {
 			commands.entity(entity).despawn();
@@ -139,5 +146,7 @@ impl NewGame {
 				.fruit_order
 				.set_order(shuffled, session_data.also_shuffle_sizes);
 		}
+
+		res.lose_height.max_upgrades = session_data.height_upgrade_count;
 	}
 }

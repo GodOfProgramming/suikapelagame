@@ -116,6 +116,10 @@ impl FruitOrder {
 			.filter_map(|f| f.data.weight.map(|w| (f, w)))
 	}
 
+	pub fn kind_array(&self) -> [FruitKind; FruitKind::COUNT] {
+		self.order.clone().map(|f| f.kind)
+	}
+
 	pub fn next(&self, current: FruitKind) -> Option<&Fruit> {
 		self
 			.order

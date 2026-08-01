@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use crate::{
 	GameState,
-	game::{Fruit, FruitKind, Invincible, WORLD_DIM, archipelago::ApClient, scn::PlaceholderFruit},
+	game::{Fruit, Invincible, WORLD_DIM, archipelago::ApClient, scn::PlaceholderFruit},
 };
 
 pub struct LosePlugin;
@@ -23,7 +23,7 @@ impl Plugin for LosePlugin {
 }
 
 #[derive(Event)]
-struct Lose;
+pub struct Lose;
 
 impl Lose {
 	fn handle(
@@ -44,13 +44,38 @@ impl Lose {
 	}
 }
 
-#[derive(Resource, Reflect, Deref)]
+#[derive(Resource, Reflect)]
 #[reflect(Resource)]
-pub struct LoseHeight(f32);
+pub struct LoseHeight {
+	upgrades: usize,
+	pub max_upgrades: usize,
+}
+
+impl LoseHeight {
+	const MAX_HEIGHT: f32 = WORLD_DIM.y * 1.5;
+
+	pub fn add_upgrades(&mut self, count: usize) {
+		self.upgrades += count;
+	}
+
+	pub fn height(&self) -> f32 {
+		let upgrade_offset = ((self.max_upgrades - self.upgrades) as f32) / (self.max_upgrades as f32);
+		let offset = if upgrade_offset.is_finite() {
+			upgrade_offset
+		} else {
+			0.0
+		};
+
+		Self::MAX_HEIGHT - offset
+	}
+}
 
 impl Default for LoseHeight {
 	fn default() -> Self {
-		Self(WORLD_DIM.y * 1.5)
+		Self {
+			upgrades: 0,
+			max_upgrades: 0,
+		}
 	}
 }
 
@@ -61,7 +86,7 @@ fn check_if_lose(
 ) {
 	for (tf, fruit) in q_tf {
 		let y = tf.translation.y + fruit.data.radius * 2.0;
-		if y >= **end_height {
+		if y >= end_height.height() {
 			commands.trigger(Lose);
 			return;
 		}

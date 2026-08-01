@@ -1,6 +1,7 @@
 use super::FruitKind;
 use crate::game::{
 	Fruit,
+	archipelago::{ApClient, BlindnessTrap, BlindnessTurns, SecrecyTrap, SecrecyTurns},
 	cmp::Invincible,
 	res::{FruitOrder, NextFruit, PlaceholderPosition, Score},
 	scn::{FruitBody, PlaceholderFruit},
@@ -15,6 +16,7 @@ use bevy_defer::{AsyncCommandsExtension, AsyncWorld};
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
 use serde::{Deserialize, Serialize};
+use strum::EnumCount;
 
 pub struct PersistencePlugin;
 
@@ -25,6 +27,30 @@ impl Plugin for PersistencePlugin {
 			.add_observer(LoadSaveFile::handle)
 			.add_observer(LoadSavedGame::handle);
 	}
+}
+
+#[derive(Serialize, Deserialize)]
+struct SaveGameData {
+	score: usize,
+	placeholder: FruitKind,
+	next: FruitKind,
+	random_state: WyRand,
+	secrecy_turns: usize,
+	blindness_turns: usize,
+	order: [FruitKind; FruitKind::COUNT],
+	retain_size: bool,
+	fruits: Vec<FruitSaveData>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FruitSaveData {
+	kind: FruitKind,
+	value: usize,
+	transform: Transform,
+	linear_velocity: LinearVelocity,
+	angular_velocity: AngularVelocity,
+	invincibility: Option<f32>,
+	sprite: AssetPath<'static>,
 }
 
 #[derive(QueryData)]
@@ -39,11 +65,15 @@ struct FruitDataToSave {
 
 #[derive(SystemParam)]
 struct SaveParams<'w, 's> {
-	score: Res<'w, Score>,
 	placeholder: Single<'w, 's, &'static Fruit, With<PlaceholderFruit>>,
-	next: Res<'w, NextFruit>,
 	rng: Single<'w, 's, &'static WyRand, With<GlobalRng>>,
+	score: Res<'w, Score>,
 	fruits: Query<'w, 's, FruitDataToSave, Without<PlaceholderFruit>>,
+	next: Res<'w, NextFruit>,
+	order: Res<'w, FruitOrder>,
+	secrecy: Res<'w, SecrecyTurns>,
+	blindness: Res<'w, BlindnessTurns>,
+	apclient: Option<Res<'w, ApClient>>,
 }
 
 #[derive(Event)]
@@ -65,11 +95,20 @@ impl SaveGame {
 			})
 			.collect();
 
+		let retain_size = params
+			.apclient
+			.map(|apclient| apclient.slot_data().also_shuffle_sizes)
+			.unwrap_or_default();
+
 		let savegame = SaveGameData {
 			score: **params.score,
 			placeholder: params.placeholder.kind,
 			next: params.next.kind,
 			random_state: params.rng.clone(),
+			order: params.order.kind_array(),
+			secrecy_turns: **params.secrecy,
+			blindness_turns: **params.blindness,
+			retain_size,
 			fruits,
 		};
 
@@ -135,32 +174,12 @@ impl LoadSaveFile {
 	}
 }
 
-#[derive(Serialize, Deserialize)]
-struct SaveGameData {
-	score: usize,
-	placeholder: FruitKind,
-	next: FruitKind,
-	random_state: WyRand,
-	fruits: Vec<FruitSaveData>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FruitSaveData {
-	kind: FruitKind,
-	value: usize,
-	transform: Transform,
-	linear_velocity: LinearVelocity,
-	angular_velocity: AngularVelocity,
-	invincibility: Option<f32>,
-	sprite: AssetPath<'static>,
-}
-
 #[derive(SystemParam)]
-struct LoadRes<'w> {
+struct LoadSavedGameRes<'w> {
 	score: ResMut<'w, Score>,
 	placeholder_pos: Res<'w, PlaceholderPosition>,
 	next: ResMut<'w, NextFruit>,
-	order: Res<'w, FruitOrder>,
+	order: ResMut<'w, FruitOrder>,
 }
 
 #[derive(Event, Deref)]
@@ -171,7 +190,7 @@ impl LoadSavedGame {
 		event: On<Self>,
 		mut commands: Commands,
 		mut rng: Single<&'static mut WyRand, With<GlobalRng>>,
-		mut res: LoadRes,
+		mut res: LoadSavedGameRes,
 	) {
 		**rng = event.random_state.clone();
 
@@ -188,6 +207,16 @@ impl LoadSavedGame {
 				@x: { res.placeholder_pos.x },
 			}
 		});
+
+		if event.secrecy_turns != 0 {
+			commands.trigger(SecrecyTrap(event.secrecy_turns));
+		}
+
+		if event.blindness_turns != 0 {
+			commands.trigger(BlindnessTrap(event.blindness_turns));
+		}
+
+		res.order.set_order(event.order, event.retain_size);
 
 		for fruit in &event.fruits {
 			commands.queue_spawn_scene(bsn! {

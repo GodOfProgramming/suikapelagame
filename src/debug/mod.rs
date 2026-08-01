@@ -2,12 +2,15 @@ use avian2d::debug_render::{PhysicsDebugPlugin, PhysicsGizmos};
 use beditor::{EditorExtension, EditorExtensionPlugin, EditorUi, prelude::uuid};
 use bevy::{color::palettes::tailwind::RED_500, ecs::system::SystemParam, prelude::*};
 use rand::seq::SliceRandom;
-use strum::{EnumCount, IntoEnumIterator, VariantArray};
+use strum::IntoEnumIterator;
 
 use crate::{
 	GameState,
 	game::{
-		Fruit, FruitKind, archipelago::ApMessage, res::FruitOrder, termination::lose::LoseHeight,
+		Fruit,
+		archipelago::{ApMessage, BlindnessTrap},
+		res::FruitOrder,
+		termination::lose::LoseHeight,
 	},
 };
 
@@ -88,7 +91,7 @@ impl EditorUi for DebugUi {
 
 		ui.separator();
 
-		ui.label(format!("LoseHeight: {}", **params.lose_height));
+		ui.label(format!("LoseHeight: {}", params.lose_height.height()));
 		ui.indent(ui.id().with("FRUIT_DISPLAY"), |ui| {
 			ui.vertical(|ui| {
 				for (entity, tf, fruit) in params.q_fruits {
@@ -120,6 +123,12 @@ impl EditorUi for DebugUi {
 		}
 
 		ui.checkbox(&mut params.shuffle_size, "Shuffle Fruit Sizes");
+
+		ui.separator();
+
+		if ui.button("Trigger Blindness").clicked() {
+			params.commands.trigger(BlindnessTrap(3));
+		}
 	}
 }
 
