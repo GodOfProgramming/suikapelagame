@@ -1,11 +1,16 @@
 pub mod traps;
 
 use super::FruitKind;
-use crate::game::{
-	archipelago::traps::{BlindnessTrap, ImpulseTrap, SecrecyTrap, ShuffleTrap, ThanosTrap},
-	evt::DropPlaceholder,
-	res::{FruitDropDelay, Score},
-	termination::lose::{Lose, LoseHeight},
+use crate::{
+	game::{
+		archipelago::traps::{
+			BlindnessTrap, ImpulseTrap, SecrecyTrap, SecrecyTurns, ShuffleTrap, ThanosTrap,
+		},
+		evt::DropPlaceholder,
+		res::{CanSeeNextFruit, FruitDropDelay, FruitOrder, Score},
+		termination::lose::{Lose, LoseHeight},
+	},
+	ui::components::NextFruitComponent,
 };
 use archipelago_rs::Client;
 use bevy::prelude::*;
@@ -28,9 +33,11 @@ impl Plugin for ArchipelagoPlugin {
 			.add_observer(ProgressiveHeightItem::handle)
 			.add_observer(BonusPoints::handle)
 			.add_observer(CooldownUpgrade::handle)
+			.add_observer(FruitSizeUpgrade::handle)
+			.add_observer(NextFruitUnlock::handle)
 			.add_systems(
 				FixedUpdate,
-				receive_archipelago_events.run_if(resource_exists::<ApClient>),
+				(receive_archipelago_events, monitor_score).run_if(resource_exists::<ApClient>),
 			);
 	}
 }
@@ -59,12 +66,13 @@ pub struct SessionData {
 	pub goal: Goal,
 	pub scoresanity: bool,
 	pub extra_scoresanity: bool,
+	pub scoresanity_thresholds: Vec<ScoresanityThreshold>,
 	pub difficulty: Difficulty,
 }
 
 #[derive(Debug, Default, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
-enum Goal {
+pub enum Goal {
 	#[default]
 	LargestFruit,
 	Score,
@@ -73,7 +81,7 @@ enum Goal {
 
 #[derive(Debug, Default, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
-enum Difficulty {
+pub enum Difficulty {
 	VeryEasy,
 	Easy,
 	EasierThanNormal,
@@ -82,6 +90,12 @@ enum Difficulty {
 	HarderThanNormal,
 	Hard,
 	VeryHard,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScoresanityThreshold {
+	value: usize,
+	location: usize,
 }
 
 fn receive_archipelago_events(
@@ -196,8 +210,8 @@ impl ReceivedItem {
 	fn handle(event: On<Self>, mut commands: Commands) {
 		match event.0 {
 			ApItem::ProgressiveHeight => commands.trigger(ProgressiveHeightItem(1)),
-			ApItem::ProgressiveFruit => (),
-			ApItem::ProgressiveNext => (),
+			ApItem::ProgressiveFruit => commands.trigger(FruitSizeUpgrade(1)),
+			ApItem::ProgressiveNext => commands.trigger(NextFruitUnlock),
 			ApItem::UsefulDropCooldown => commands.trigger(CooldownUpgrade(1)),
 			ApItem::UsefulPoints => commands.trigger(BonusPoints(50)),
 			ApItem::TrapInstaDrop => commands.trigger(DropPlaceholder),
@@ -237,3 +251,34 @@ impl CooldownUpgrade {
 		drop_delay.add_upgrades(event.0);
 	}
 }
+
+#[derive(Event)]
+struct FruitSizeUpgrade(usize);
+
+impl FruitSizeUpgrade {
+	fn handle(event: On<Self>, mut fruit_order: ResMut<FruitOrder>) {
+		fruit_order.limit += event.0;
+	}
+}
+
+#[derive(Event)]
+struct NextFruitUnlock;
+
+impl NextFruitUnlock {
+	fn handle(
+		_: On<Self>,
+		q_next: Query<&mut Visibility, With<NextFruitComponent>>,
+		secrecy: Res<SecrecyTurns>,
+		mut next_visible: ResMut<CanSeeNextFruit>,
+	) {
+		**next_visible = true;
+
+		if secrecy.inactive() {
+			for mut vis in q_next {
+				*vis = Visibility::Inherited;
+			}
+		}
+	}
+}
+
+fn monitor_score(mut commands: Commands, score: Res<Score>, mut apclient: ResMut<ApClient>) {}

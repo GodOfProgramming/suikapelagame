@@ -70,6 +70,7 @@ impl NextFruit {
 #[reflect(Resource)]
 pub struct FruitOrder {
 	pub order: [Fruit; FruitKind::COUNT],
+	pub limit: usize,
 }
 
 impl Default for FruitOrder {
@@ -84,6 +85,7 @@ impl Default for FruitOrder {
 				.collect::<Vec<_>>()
 				.try_into()
 				.unwrap(),
+			limit: FruitKind::COUNT,
 		}
 	}
 }
@@ -114,6 +116,7 @@ impl FruitOrder {
 			.order
 			.iter()
 			.filter_map(|f| f.data.weight.map(|w| (f, w)))
+			.take(self.limit)
 	}
 
 	pub fn kind_array(&self) -> [FruitKind; FruitKind::COUNT] {
@@ -165,6 +168,16 @@ impl FruitDropDelay {
 			0.0
 		};
 		0.5 + additional
+	}
+}
+
+#[derive(Resource, Reflect, Deref, DerefMut)]
+#[reflect(Resource)]
+pub struct CanSeeNextFruit(bool);
+
+impl Default for CanSeeNextFruit {
+	fn default() -> Self {
+		Self(true)
 	}
 }
 

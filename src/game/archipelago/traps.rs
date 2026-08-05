@@ -10,7 +10,7 @@ use crate::{
 		Fruit, WORLD_DIM,
 		cmp::Invincible,
 		evt::PlaceholderDropped,
-		res::FruitOrder,
+		res::{CanSeeNextFruit, FruitOrder},
 		scn::{PlaceholderFruit, WALL_PAD},
 		termination::lose::LoseHeight,
 	},
@@ -30,7 +30,8 @@ impl Plugin for TrapPlugin {
 			.add_observer(SecrecyTrap::handle)
 			.add_observer(BlindnessTrap::handle)
 			.add_observer(ImpulseTrap::handle)
-			.add_observer(on_drop_placeholder);
+			.add_observer(reduce_secrecy)
+			.add_observer(reduce_blindness);
 	}
 }
 
@@ -121,6 +122,12 @@ impl SecrecyTrap {
 #[reflect(Resource)]
 pub struct SecrecyTurns(usize);
 
+impl SecrecyTurns {
+	pub fn inactive(&self) -> bool {
+		self.0 == 0
+	}
+}
+
 #[derive(Event)]
 pub struct BlindnessTrap(pub usize);
 
@@ -185,27 +192,38 @@ impl BlindnessCover {
 	}
 }
 
-fn on_drop_placeholder(
+fn reduce_secrecy(
 	_: On<PlaceholderDropped>,
-	mut commands: Commands,
 	mut secrecy: ResMut<SecrecyTurns>,
-	mut blindness: ResMut<BlindnessTurns>,
-	q_to_hide: Query<&mut Visibility, Or<(With<NextFruitComponent>, With<PlaceholderFruit>)>>,
-	q_covers: Query<Entity, With<BlindnessCover>>,
+	mut can_see_next: Res<CanSeeNextFruit>,
+	q_next_fruits: Query<
+		(&mut Visibility, Has<NextFruitComponent>),
+		Or<(With<NextFruitComponent>, With<PlaceholderFruit>)>,
+	>,
 ) {
 	// last secrecy turn
 	if secrecy.0 == 1 {
-		for mut vis in q_to_hide {
-			*vis = Visibility::Inherited;
+		for (mut vis, is_next_fruit) in q_next_fruits {
+			if !is_next_fruit || **can_see_next {
+				*vis = Visibility::Inherited;
+			}
 		}
 	}
 
+	secrecy.0 = secrecy.0.saturating_sub(1);
+}
+
+fn reduce_blindness(
+	_: On<PlaceholderDropped>,
+	mut commands: Commands,
+	mut blindness: ResMut<BlindnessTurns>,
+	q_covers: Query<Entity, With<BlindnessCover>>,
+) {
 	if blindness.0 == 1 {
 		for entity in q_covers {
 			commands.entity(entity).despawn();
 		}
 	}
 
-	secrecy.0 = secrecy.0.saturating_sub(1);
 	blindness.0 = blindness.0.saturating_sub(1);
 }

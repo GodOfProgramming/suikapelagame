@@ -1,16 +1,17 @@
 from collections.abc import Mapping
-from typing import Any, Callable, Final
+from typing import Any, Final
 from os import linesep
+import dataclasses
+import math
 
-from BaseClasses import CollectionRule, Entrance, Location, Region, MultiWorld
+from BaseClasses import Region, MultiWorld
 from Options import OptionError
-from rule_builder.rules import Rule
 from worlds.AutoWorld import World
 
 from . import items, rules
 from .cfg import BASE_FRUIT_ORDER
 from .items import ITEM_NAME_TO_ID
-from .locations import LOCATION_NAME_TO_ID
+from .locations import LOCATION_NAME_TO_ID, ScoresanityThreshhold, thresh_generator
 from .options import SuikapelagameOptions, Goal, Scoresanity, ShuffleFruitOrder
 from .web_world import SuikapelagameWebWorld
 
@@ -19,7 +20,7 @@ class SuikapelagameWorld(World):
     """
     Suikapelagame is a clone of Suika Game with extra features
 
-    Inspired by Suikapelago
+    Taken from Suikapelago (https://github.com/Starwort/suikapelago) and rewritten in Rust + Bevy
     """
 
     game = "Suikapelagame"
@@ -128,7 +129,30 @@ class SuikapelagameWorld(World):
             "goal": +self.options.goal,
             "scoresanity": bool(self.options.scoresanity),
             "extra_scoresanity": self.options.scoresanity == Scoresanity.WITH_EXTRA,
+            "scoresanity_thresholds": self.generate_scoresanity(),
             "difficulty": +self.options.scoresanity_difficulty,
             "max_fruit_size": +self.options.starting_max_fruit_size,
             "next_needs_unlock": bool(self.options.next_needs_unlock),
         }
+
+    def generate_scoresanity(self) -> list[dict]:
+        if bool(self.options.scoresanity):
+            return list(
+                map(
+                    lambda t: dataclasses.asdict(t),
+                    sorted(
+                        [
+                            t
+                            for i in range(0, 20)
+                            for t in thresh_generator(
+                                i,
+                                self.options.scoresanity_difficulty.value,
+                                self.options.scoresanity == Scoresanity.WITH_EXTRA,
+                            )
+                        ],
+                        key=lambda t: t.value,
+                    ),
+                )
+            )
+
+        return []
