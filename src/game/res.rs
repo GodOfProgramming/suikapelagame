@@ -1,6 +1,5 @@
-use crate::game::Fruit;
-
 use super::{FruitData, FruitKind};
+use crate::game::Fruit;
 use bevy::prelude::*;
 use enum_map::{EnumMap, enum_map};
 use rand::{Rng, seq::IndexedRandom};
@@ -17,7 +16,8 @@ impl Plugin for ResPlugin {
 			.init_resource::<Score>()
 			.init_resource::<FruitDropDelay>()
 			.init_resource::<FruitOrder>()
-			.init_resource::<MinVelocityFirstDropThresh>();
+			.init_resource::<MinVelocityFirstDropThresh>()
+			.init_resource::<CanSeeNextFruit>();
 	}
 }
 
@@ -170,7 +170,6 @@ impl FruitDropDelay {
 		0.5 + additional
 	}
 }
-
 #[derive(Resource, Reflect, Deref, DerefMut)]
 #[reflect(Resource)]
 pub struct CanSeeNextFruit(bool);

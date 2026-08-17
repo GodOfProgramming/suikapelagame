@@ -44,7 +44,7 @@ impl Lose {
 	}
 }
 
-#[derive(Resource, Reflect)]
+#[derive(Resource, Reflect, Default)]
 #[reflect(Resource)]
 pub struct LoseHeight {
 	upgrades: usize,
@@ -59,7 +59,8 @@ impl LoseHeight {
 	}
 
 	pub fn height(&self) -> f32 {
-		let upgrade_offset = ((self.max_upgrades - self.upgrades) as f32) / (self.max_upgrades as f32);
+		let upgrade_offset =
+			((self.max_upgrades - self.upgrades) as f32) / (self.max_upgrades as f32) * Self::MAX_HEIGHT;
 		let offset = if upgrade_offset.is_finite() {
 			upgrade_offset
 		} else {
@@ -67,15 +68,6 @@ impl LoseHeight {
 		};
 
 		Self::MAX_HEIGHT - offset
-	}
-}
-
-impl Default for LoseHeight {
-	fn default() -> Self {
-		Self {
-			upgrades: 0,
-			max_upgrades: 0,
-		}
 	}
 }
 

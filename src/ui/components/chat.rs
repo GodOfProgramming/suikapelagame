@@ -88,6 +88,7 @@ fn send_scroll_events(
 
 		for pointer_map in hover_map.values() {
 			for entity in pointer_map.keys().copied() {
+				info!("send scroll to {entity}");
 				commands.trigger(Scroll {
 					entity,
 					kind: ScrollKind::Delta(delta),
@@ -142,6 +143,7 @@ fn chatbox_scroll(
 	mut scroll: On<Scroll>,
 	mut q: Query<(&mut ScrollPosition, &Node, &ComputedNode)>,
 ) {
+	info!("received scroll");
 	let Ok((mut scroll_position, node, computed)) = q.get_mut(scroll.entity) else {
 		return;
 	};
@@ -206,7 +208,7 @@ impl ChatInput {
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-struct QueuedMessages(Vec<String>);
+struct QueuedMessages(Vec<ApMessage>);
 
 fn chat_message(parent: Entity, msg: &str) -> impl Scene {
 	bsn! {
@@ -217,6 +219,10 @@ fn chat_message(parent: Entity, msg: &str) -> impl Scene {
 			font_size: FontSize::Px(LINE_HEIGHT)
 		}
 	}
+}
+
+fn rich_chat_message(parent: Entity, msg: &str) -> impl Bundle {
+	(ChildOf(parent), bevy_simple_rich_text::RichText::new(msg))
 }
 
 fn on_ap_message(
@@ -234,16 +240,34 @@ fn on_ap_message(
 		}
 
 		for msg in messages.read() {
-			commands.queue_spawn_scene(chat_message(*chatbox, &msg.0));
+			match msg {
+				ApMessage::Text(msg) => {
+					info!("[Text Ap Message] {msg}");
+					commands.queue_spawn_scene(chat_message(*chatbox, msg));
+				}
+				ApMessage::Rich(msg) => {
+					info!("[RichText Ap Message] {msg}");
+					commands.spawn(rich_chat_message(*chatbox, msg));
+				}
+			}
 		}
 	} else {
-		queue.extend(messages.read().map(|m| m.0.clone()));
+		queue.extend(messages.read().cloned());
 	}
 }
 
 fn dump_queue(event: On<Add, ChatBox>, mut commands: Commands, mut queue: ResMut<QueuedMessages>) {
 	for msg in queue.drain(..) {
-		commands.queue_spawn_scene(chat_message(event.event_target(), &msg));
+		match msg {
+			ApMessage::Text(msg) => {
+				info!("[Text Ap Message] {msg}");
+				commands.queue_spawn_scene(chat_message(event.event_target(), &msg));
+			}
+			ApMessage::Rich(msg) => {
+				info!("[RichText Ap Message] {msg}");
+				commands.spawn(rich_chat_message(event.event_target(), &msg));
+			}
+		}
 	}
 	commands.delayed().secs(0.5).trigger(Scroll {
 		entity: event.event_target(),

@@ -1,10 +1,8 @@
 use crate::game::{
 	Fruit,
-	archipelago::ApClient,
 	cmp::Invincible,
 	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score, StaticAssets},
 	scn::{FruitBody, PlaceholderFruit},
-	termination::lose::LoseHeight,
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_prng::WyRand;
@@ -105,11 +103,8 @@ pub struct NewGame;
 pub struct NewGameRes<'w> {
 	score: ResMut<'w, Score>,
 	fruit_order: ResMut<'w, FruitOrder>,
-	apclient: Option<Res<'w, ApClient>>,
 	next_fruit: ResMut<'w, NextFruit>,
 	placeholder_position: Res<'w, PlaceholderPosition>,
-	lose_height: ResMut<'w, LoseHeight>,
-	drop_delay: ResMut<'w, FruitDropDelay>,
 }
 
 impl NewGame {
@@ -136,21 +131,5 @@ impl NewGame {
 				@x: { res.placeholder_position.x },
 			}
 		});
-
-		let Some(apclient) = res.apclient else {
-			return;
-		};
-
-		let session_data = apclient.slot_data();
-		if let Some(shuffled) = session_data.shuffle_fruit {
-			res
-				.fruit_order
-				.set_order(shuffled, session_data.also_shuffle_sizes);
-		}
-
-		res.lose_height.max_upgrades = session_data.height_upgrade_count;
-
-		res.drop_delay.additional_cooldown = session_data.starting_cooldown as f32;
-		res.drop_delay.max_upgrades = session_data.cooldown_upgrade_count;
 	}
 }

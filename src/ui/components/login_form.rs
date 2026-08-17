@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use super::AppEditableText;
 use crate::{
 	component_name,
-	game::archipelago::{ApClient, SessionData},
+	game::archipelago::{ApClient, ApLoginComplete, SlotData},
 	ui::components::AppButton,
 };
 use bevy::{ecs::system::SystemParam, prelude::*, text::EditableText, ui::FlexDirection};
@@ -150,16 +150,14 @@ fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData)
 		info!("Starting login...");
 
 		let login_result =
-			archipelago_rs::Client::<SessionData>::connect(url, name, Some("Suikapelagame"), opts).await;
+			archipelago_rs::Client::<SlotData>::connect(url, name, Some("Suikapelagame"), opts).await;
 
 		match login_result {
 			Ok(client) => {
-				info!(
-					session_data = format!("{:?}", client.slot_data()),
-					"Login complete"
-				);
+				info!("Login complete:\n{:#?}", client.slot_data());
 
 				AsyncWorld.insert_resource(ApClient::new(client));
+				AsyncWorld.trigger_event(ApLoginComplete);
 
 				Ok(())
 			}

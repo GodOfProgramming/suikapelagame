@@ -127,8 +127,6 @@ class SuikapelagameWorld(World):
             "cooldown_upgrade_count": +self.options.cooldown_upgrade_count,
             "starting_cooldown": +self.options.starting_drop_cooldown,
             "goal": +self.options.goal,
-            "scoresanity": bool(self.options.scoresanity),
-            "extra_scoresanity": self.options.scoresanity == Scoresanity.WITH_EXTRA,
             "scoresanity_thresholds": self.generate_scoresanity(),
             "difficulty": +self.options.scoresanity_difficulty,
             "max_fruit_size": +self.options.starting_max_fruit_size,

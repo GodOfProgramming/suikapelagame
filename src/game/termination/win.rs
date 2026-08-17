@@ -11,7 +11,7 @@ impl Plugin for WinPlugin {
 }
 
 #[derive(Event)]
-struct Win;
+pub struct Win;
 
 impl Win {
 	fn handle(_: On<Self>, mut game_state: ResMut<NextState<GameState>>) {
