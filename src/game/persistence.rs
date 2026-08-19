@@ -33,20 +33,20 @@ impl Plugin for PersistencePlugin {
 }
 
 #[derive(Serialize, Deserialize)]
-struct SaveGameData {
-	score: usize,
-	placeholder: FruitKind,
-	next: FruitKind,
-	random_state: WyRand,
-	secrecy_turns: usize,
-	blindness_turns: usize,
-	order: [FruitKind; FruitKind::COUNT],
-	retain_size: bool,
-	fruits: Vec<FruitSaveData>,
+pub struct SaveGameData {
+	pub score: usize,
+	pub placeholder: FruitKind,
+	pub next: FruitKind,
+	pub random_state: WyRand,
+	pub secrecy_turns: usize,
+	pub blindness_turns: usize,
+	pub order: [FruitKind; FruitKind::COUNT],
+	pub retain_size: bool,
+	pub fruits: Vec<FruitSaveData>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct FruitSaveData {
+pub struct FruitSaveData {
 	kind: FruitKind,
 	value: usize,
 	transform: Transform,
@@ -186,7 +186,7 @@ struct LoadSavedGameRes<'w> {
 }
 
 #[derive(Event, Deref)]
-struct LoadSavedGame(SaveGameData);
+pub struct LoadSavedGame(SaveGameData);
 
 impl LoadSavedGame {
 	fn handle(

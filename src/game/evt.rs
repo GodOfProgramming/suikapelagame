@@ -1,5 +1,5 @@
 use crate::game::{
-	Fruit,
+	Fruit, FruitKind,
 	cmp::Invincible,
 	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score, StaticAssets},
 	scn::{FruitBody, PlaceholderFruit},
@@ -133,3 +133,6 @@ impl NewGame {
 		});
 	}
 }
+
+#[derive(Event, Clone, Deref)]
+pub struct FruitCombo(pub FruitKind);

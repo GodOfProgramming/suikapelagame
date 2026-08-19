@@ -1,13 +1,9 @@
 use std::marker::PhantomData;
 
 use super::AppEditableText;
-use crate::{
-	component_name,
-	game::archipelago::{ApClient, ApLoginComplete, SlotData},
-	ui::components::AppButton,
-};
+use crate::{component_name, game::archipelago::ApClient, ui::components::AppButton};
 use bevy::{ecs::system::SystemParam, prelude::*, text::EditableText, ui::FlexDirection};
-use bevy_defer::{AsyncCommandsExtension, AsyncWorld};
+use bevy_defer::AsyncCommandsExtension;
 
 #[derive(SceneComponent, Default, Clone)]
 pub struct LoginFormComponent;
@@ -139,33 +135,10 @@ fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData)
 		return Err(BevyError::error("name cannot be empty"));
 	}
 
-	let mut opts = archipelago_rs::ConnectionOptions::new();
-
-	if !pass.is_empty() {
-		opts = opts.password(pass);
-	}
-
 	let url = format!("{host}:{port}");
-	commands.spawn_task(move || async {
-		info!("Starting login...");
-
-		let login_result =
-			archipelago_rs::Client::<SlotData>::connect(url, name, Some("Suikapelagame"), opts).await;
-
-		match login_result {
-			Ok(client) => {
-				info!("Login complete:\n{:#?}", client.slot_data());
-
-				AsyncWorld.insert_resource(ApClient::new(client));
-				AsyncWorld.trigger_event(ApLoginComplete);
-
-				Ok(())
-			}
-			Err(err) => {
-				error!(err = err.to_string(), "Failed to login to archipelago");
-				Ok(())
-			}
-		}
+	commands.spawn_task(|| async {
+		ApClient::login(url, name, if pass.is_empty() { None } else { Some(pass) }).await;
+		Ok(())
 	});
 
 	Ok(())

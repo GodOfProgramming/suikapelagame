@@ -1,7 +1,15 @@
 pub mod events;
 pub mod math;
 
-use bevy::{ecs::query::QueryFilter, prelude::*};
+use std::borrow::BorrowMut;
+
+use bevy::{
+	ecs::{
+		observer::{IntoObserver, ObserverWithCondition},
+		query::QueryFilter,
+	},
+	prelude::*,
+};
 
 pub fn despawn_query<F: QueryFilter>(mut commands: Commands, query: Query<Entity, F>) {
 	for entity in query {
@@ -15,4 +23,8 @@ pub fn entity_exists<F: QueryFilter>(q: Query<(), F>) -> bool {
 
 pub fn none_of<F: QueryFilter>(q: Query<(), F>) -> bool {
 	q.is_empty()
+}
+
+pub fn component_added<C: Component>(q: Query<(), Added<C>>) -> bool {
+	!q.is_empty()
 }

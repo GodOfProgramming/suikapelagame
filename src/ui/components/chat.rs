@@ -1,6 +1,6 @@
 use crate::{
 	component_name,
-	game::archipelago::{ApClient, ApMessage},
+	game::archipelago::{ApClient, msg::ApMessage},
 	ui::components::AppEditableText,
 };
 use bevy::{
@@ -11,6 +11,7 @@ use bevy::{
 	prelude::*,
 	text::EditableText,
 };
+use clap::Parser;
 
 const LINE_HEIGHT: f32 = 16.0;
 
@@ -21,7 +22,8 @@ impl Plugin for ChatPlugin {
 		app
 			.init_resource::<QueuedMessages>()
 			.add_observer(dump_queue)
-			.add_systems(Update, (send_scroll_events, handle_submissions))
+			.add_observer(cmd::Args::handle)
+			.add_systems(Update, (send_scroll_events, on_submit))
 			.add_systems(FixedUpdate, on_ap_message);
 	}
 }
@@ -98,7 +100,7 @@ fn send_scroll_events(
 	}
 }
 
-fn handle_submissions(
+fn on_submit(
 	mut commands: Commands,
 	input_focus: Res<InputFocus>,
 	keyboard: Res<ButtonInput<KeyCode>>,
@@ -109,13 +111,29 @@ fn handle_submissions(
 		&& let Some(focused) = input_focus.get()
 		&& let Ok(mut text) = q_input.get_mut(focused)
 	{
+		let msg = text.value().to_string();
+
+		if let Some(msg) = msg.strip_prefix("/")
+			&& let Some(words) = shlex::split(msg)
+		{
+			match cmd::Args::try_parse_from(words) {
+				Ok(args) => {
+					commands.trigger(args);
+				}
+				Err(err) => {
+					commands.write_message(ApMessage::new(err.render()));
+				}
+			}
+			text.editor.set_text("");
+			return Ok(());
+		}
+
 		let Some(mut apclient) = apclient else {
-			commands.queue(ApMessage::new(text.value()));
+			commands.queue(ApMessage::new(msg));
 			text.editor.set_text("");
 			return Ok(());
 		};
 
-		let msg = text.value().to_string();
 		let result = apclient.say(msg);
 		if result.is_ok() {
 			text.editor.set_text("");
@@ -125,6 +143,8 @@ fn handle_submissions(
 
 	Ok(())
 }
+
+// Scroll logic from bevy examples
 
 #[derive(EntityEvent)]
 #[entity_event(propagate, auto_propagate)]
@@ -242,11 +262,9 @@ fn on_ap_message(
 		for msg in messages.read() {
 			match msg {
 				ApMessage::Text(msg) => {
-					info!("[Text Ap Message] {msg}");
 					commands.queue_spawn_scene(chat_message(*chatbox, msg));
 				}
 				ApMessage::Rich(msg) => {
-					info!("[RichText Ap Message] {msg}");
 					commands.spawn(rich_chat_message(*chatbox, msg));
 				}
 			}
@@ -260,11 +278,9 @@ fn dump_queue(event: On<Add, ChatBox>, mut commands: Commands, mut queue: ResMut
 	for msg in queue.drain(..) {
 		match msg {
 			ApMessage::Text(msg) => {
-				info!("[Text Ap Message] {msg}");
 				commands.queue_spawn_scene(chat_message(event.event_target(), &msg));
 			}
 			ApMessage::Rich(msg) => {
-				info!("[RichText Ap Message] {msg}");
 				commands.spawn(rich_chat_message(event.event_target(), &msg));
 			}
 		}
@@ -273,4 +289,150 @@ fn dump_queue(event: On<Add, ChatBox>, mut commands: Commands, mut queue: ResMut
 		entity: event.event_target(),
 		kind: ScrollKind::ToBottom,
 	});
+}
+
+mod cmd {
+	use bevy::prelude::*;
+	use bevy_defer::AsyncCommandsExtension;
+	use clap::{Parser, Subcommand};
+	use itertools::Itertools;
+
+	use crate::game::{
+		archipelago::{ApClient, msg::ApMessage},
+		evt::NewGame,
+	};
+
+	#[derive(Event, Parser)]
+	#[command(multicall = true)]
+	pub struct Args {
+		#[command(subcommand)]
+		command: Command,
+	}
+
+	#[derive(Subcommand)]
+	pub enum Command {
+		/// Request an archipelago sync
+		Sync,
+		/// Connect to a new server
+		Connect {
+			name: String,
+			url: String,
+			#[arg(short, long)]
+			password: Option<String>,
+		},
+		/// Start a new game
+		NewGame,
+		/// Location Information
+		Locations {
+			#[arg(short, long, help = "Show checked locations")]
+			checked: bool,
+			#[arg(short, long, help = "Show unchecked locations")]
+			unchecked: bool,
+		},
+		Items,
+		Cheat {
+			#[arg(short, long, help = "Force release this item location")]
+			location: Option<i64>,
+		},
+	}
+
+	impl Args {
+		pub fn handle(event: On<Self>, mut commands: Commands, apclient: Option<ResMut<ApClient>>) {
+			match &event.command {
+				Command::Sync => {
+					let Some(mut apclient) = apclient else {
+						return;
+					};
+
+					info!("Requesting sync...");
+
+					let Err(err) = apclient.sync() else {
+						commands.write_message(ApMessage::new("Requesting sync..."));
+						return;
+					};
+
+					commands.write_message(ApMessage::error(format!("Failed to sync: {err}")));
+				}
+				Command::Connect {
+					url,
+					password,
+					name,
+				} => {
+					let url = url.clone();
+					let name = name.clone();
+					let password = password.clone();
+					commands.spawn_task(|| async {
+						ApClient::login(url, name, password).await;
+						Ok(())
+					});
+				}
+				Command::NewGame => {
+					commands.trigger(NewGame);
+				}
+				Command::Locations { checked, unchecked } => {
+					let Some(apclient) = apclient else {
+						return;
+					};
+
+					match (checked, unchecked) {
+						(true, false) => {
+							let iter = apclient
+								.checked_locations()
+								.sorted_by_key(|l| l.id())
+								.map(|l| format!("{} ({})", l.name(), l.id()));
+							let msg = itertools::join(iter, "\n");
+							commands.write_message(ApMessage::new(msg));
+						}
+						(false, true) => {
+							let iter = apclient
+								.unchecked_locations()
+								.sorted_by_key(|l| l.id())
+								.map(|l| format!("{} ({})", l.name(), l.id()));
+							let msg = itertools::join(iter, "\n");
+							commands.write_message(ApMessage::new(msg));
+						}
+						_ => {
+							let checked = apclient
+								.checked_locations()
+								.sorted_by_key(|l| l.id())
+								.map(|l| format!(" {} ({})", l.name(), l.id()));
+							let unchecked = apclient
+								.unchecked_locations()
+								.sorted_by_key(|l| l.id())
+								.map(|l| format!(" {} ({})", l.name(), l.id()));
+							let iter = std::iter::once(String::from("Checked:"))
+								.chain(checked)
+								.chain(std::iter::once(String::from("Unchecked:")))
+								.chain(unchecked);
+							let msg = itertools::join(iter, "\n");
+							commands.write_message(ApMessage::new(msg));
+						}
+					}
+				}
+				Command::Items => {
+					let Some(apclient) = apclient else {
+						return;
+					};
+
+					let iter = apclient
+						.received_items()
+						.iter()
+						.map(|i| format!("{} ({})", i.item().name(), i.item().id()));
+					let msg = itertools::join(iter, "\n");
+					commands.write_message(ApMessage::new(msg));
+				}
+				Command::Cheat { location } => {
+					let Some(mut apclient) = apclient else {
+						return;
+					};
+
+					if let Some(location) = location
+						&& let Err(err) = apclient.mark_checked([*location])
+					{
+						commands.write_message(ApMessage::error(err));
+					}
+				}
+			}
+		}
+	}
 }

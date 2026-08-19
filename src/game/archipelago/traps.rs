@@ -1,9 +1,4 @@
-use avian2d::dynamics::rigid_body::LinearVelocity;
-use bevy::prelude::*;
-use bevy_prng::WyRand;
-use bevy_rand::global::GlobalRng;
-use rand::seq::{IteratorRandom, SliceRandom};
-
+use super::NextFruitUnlocked;
 use crate::{
 	component_name,
 	game::{
@@ -14,8 +9,12 @@ use crate::{
 		scn::{PlaceholderFruit, WALL_PAD},
 		termination::lose::LoseHeight,
 	},
-	ui::components::NextFruitComponent,
 };
+use avian2d::dynamics::rigid_body::LinearVelocity;
+use bevy::prelude::*;
+use bevy_prng::WyRand;
+use bevy_rand::global::GlobalRng;
+use rand::seq::{IteratorRandom, SliceRandom};
 
 pub struct TrapPlugin;
 
@@ -50,7 +49,7 @@ impl ImpulseTrap {
 			let dir = tf.translation.xy() - bottom;
 			let x = dir * impulse_force.0;
 			**vel = 1.0 / 5.0 * x;
-			commands.entity(entity).insert(Invincible::new(5.0));
+			commands.entity(entity).insert(Invincible::new(5.0_f32));
 		}
 	}
 }
@@ -109,10 +108,12 @@ impl SecrecyTrap {
 	fn handle(
 		event: On<Self>,
 		mut turns: ResMut<SecrecyTurns>,
-		q_to_hide: Query<&mut Visibility, Or<(With<NextFruitComponent>, With<PlaceholderFruit>)>>,
+		mut can_see_next: ResMut<CanSeeNextFruit>,
+		q_placeholders: Query<&mut Visibility, With<PlaceholderFruit>>,
 	) {
 		turns.0 = event.0;
-		for mut vis in q_to_hide {
+		**can_see_next = false;
+		for mut vis in q_placeholders {
 			*vis = Visibility::Hidden;
 		}
 	}
@@ -195,18 +196,16 @@ impl BlindnessCover {
 fn reduce_secrecy(
 	_: On<PlaceholderDropped>,
 	mut secrecy: ResMut<SecrecyTurns>,
-	mut can_see_next: Res<CanSeeNextFruit>,
-	q_next_fruits: Query<
-		(&mut Visibility, Has<NextFruitComponent>),
-		Or<(With<NextFruitComponent>, With<PlaceholderFruit>)>,
-	>,
+	mut can_see_next: ResMut<CanSeeNextFruit>,
+	next_unlocked: Res<NextFruitUnlocked>,
+	q_placeholder: Query<&mut Visibility, With<PlaceholderFruit>>,
 ) {
 	// last secrecy turn
-	if secrecy.0 == 1 {
-		for (mut vis, is_next_fruit) in q_next_fruits {
-			if !is_next_fruit || **can_see_next {
-				*vis = Visibility::Inherited;
-			}
+	if secrecy.0 == 1 && **next_unlocked {
+		**can_see_next = true;
+
+		for mut vis in q_placeholder {
+			*vis = Visibility::Inherited;
 		}
 	}
 

@@ -9,7 +9,7 @@ use crate::{
 	game::{
 		Fruit,
 		archipelago::{
-			ApMessage,
+			msg::ApMessage,
 			traps::{BlindnessTrap, ImpulseTrap},
 		},
 		res::FruitOrder,

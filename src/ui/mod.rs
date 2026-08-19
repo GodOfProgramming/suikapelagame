@@ -4,7 +4,7 @@ use crate::{
 	GameCamera, GameState,
 	game::{
 		WORLD_DIM,
-		archipelago::ApClient,
+		archipelago::{ApClient, ApLoginComplete},
 		evt::{DropPlaceholder, MovePlaceholder},
 	},
 	ui::components::{
@@ -47,7 +47,8 @@ impl Plugin for UiPlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.add_observer(DisableLogin::handler)
-			.add_observer(send_event_on::<Add, ApClient>(DisableLogin))
+			.add_observer(send_event_on::<ApLoginComplete, ()>(DisableLogin))
+			.add_observer(EnableChatbox::handle)
 			.add_plugins((
 				MainMenuPlugin,
 				NextFruitPlugin,
@@ -62,7 +63,10 @@ impl Plugin for UiPlugin {
 				OnExit(GameState::MainMenu),
 				(send_event(DisableLogin), clear_center),
 			)
-			.add_systems(OnEnter(GameState::Gameplay), add_player_ui)
+			.add_systems(
+				OnEnter(GameState::Gameplay),
+				(send_event(EnableChatbox), add_gameplay_ui).chain(),
+			)
 			.add_systems(
 				OnExit(GameState::Gameplay),
 				despawn_query::<With<SaveLoadComponent>>,
@@ -308,11 +312,38 @@ fn init_game_view(
 	}
 }
 
-fn add_player_ui(mut commands: Commands, left: Single<Entity, With<LeftZone>>) {
+#[derive(Event, Clone)]
+pub struct EnableChatbox;
+
+impl EnableChatbox {
+	fn handle(
+		_: On<Self>,
+		mut commands: Commands,
+		left: Single<Entity, With<LeftZone>>,
+		q_chat_boxes: Query<(), With<ChatComponent>>,
+	) {
+		if !q_chat_boxes.is_empty() {
+			return;
+		}
+
+		commands.queue_spawn_scene_list(bsn_list! [
+			@ChatComponent Node {
+				width: percent(100)
+			} ChildOf({*left}),
+		]);
+	}
+}
+
+fn add_gameplay_ui(
+	mut commands: Commands,
+	left: Single<Entity, With<LeftZone>>,
+	q_saveload: Query<(), With<SaveLoadComponent>>,
+) {
+	if !q_saveload.is_empty() {
+		return;
+	}
+
 	commands.queue_spawn_scene_list(bsn_list! [
-		@ChatComponent Node {
-			width: percent(100)
-		} ChildOf({*left}),
 		@SaveLoadComponent Node {
 			width: percent(100)
 		} ChildOf({*left}),

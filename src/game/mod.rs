@@ -8,8 +8,12 @@ pub mod termination;
 
 use crate::{
 	GameState,
-	game::{evt::NewGame, res::ResPlugin, termination::TerminationPlugin},
-	util::{despawn_query, events::send_event},
+	game::{
+		evt::{FruitCombo, NewGame},
+		res::ResPlugin,
+		termination::TerminationPlugin,
+	},
+	util::events::send_event,
 };
 use archipelago::ArchipelagoPlugin;
 use avian2d::prelude::*;
@@ -175,6 +179,8 @@ fn on_collisions(
 				position: middle.xy(),
 				invincibility: res.time.elapsed_secs(),
 			});
+
+			commands.trigger(FruitCombo(fruit.kind))
 		}
 
 		**res.score += fruit_a.data.value + fruit_b.data.value;

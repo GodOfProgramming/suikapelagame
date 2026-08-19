@@ -1,27 +1,36 @@
+pub mod msg;
 pub mod traps;
-
-use std::time::Duration;
 
 use super::FruitKind;
 use crate::{
 	GameState,
 	game::{
-		archipelago::traps::{
-			BlindnessTrap, ImpulseTrap, SecrecyTrap, SecrecyTurns, ShuffleTrap, ThanosTrap,
+		archipelago::{
+			msg::tags,
+			traps::{BlindnessTrap, ImpulseTrap, SecrecyTrap, SecrecyTurns, ShuffleTrap, ThanosTrap},
 		},
-		evt::{DropPlaceholder, PlaceholderDropped, SpawnFruit},
+		evt::{DropPlaceholder, FruitCombo, PlaceholderDropped, SpawnFruit},
+		persistence::LoadSavedGame,
 		res::{CanSeeNextFruit, FruitDropDelay, FruitOrder, Score},
 		termination::{
 			lose::{Lose, LoseHeight},
 			win::Win,
 		},
 	},
-	ui::components::{NextFruitComponent, ScoreComponent},
+	ui::{
+		EnableChatbox,
+		components::{NextFruitComponent, ScoreComponent},
+	},
+	util::component_added,
 };
 use archipelago_rs::{Client, ClientStatus};
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{ecs::system::SystemParam, platform::collections::HashSet, prelude::*};
+use bevy_defer::AsyncWorld;
+use msg::ApMessage;
+use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::time::Duration;
 use strum::EnumCount;
 use strum_macros::FromRepr;
 use traps::TrapPlugin;
@@ -31,38 +40,44 @@ pub struct ArchipelagoPlugin;
 
 impl Plugin for ArchipelagoPlugin {
 	fn build(&self, app: &mut App) {
+		let is_logged_in = resource_exists::<ApClient>;
+
 		app
 			.init_resource::<NextThreshold>()
 			.init_resource::<FruitDropCooldown>()
+			.init_resource::<NextFruitUnlocked>()
 			.add_message::<ApMessage>()
 			.add_plugins(TrapPlugin)
-			.add_observer(archipelago_error_handler.run_if(resource_exists::<ApClient>))
-			.add_observer(ReceivedItem::handle.run_if(resource_exists::<ApClient>))
-			.add_observer(ProgressiveHeightItem::handle.run_if(resource_exists::<ApClient>))
-			.add_observer(BonusPoints::handle.run_if(resource_exists::<ApClient>))
-			.add_observer(CooldownUpgrade::handle.run_if(resource_exists::<ApClient>))
-			.add_observer(FruitSizeUpgrade::handle.run_if(resource_exists::<ApClient>))
-			.add_observer(NextFruitUnlock::handle.run_if(resource_exists::<ApClient>))
-			.add_observer(check_spawned_fruit.run_if(resource_exists::<ApClient>))
-			.add_observer(on_win.run_if(resource_exists::<ApClient>))
+			.add_observer(ReceivedItem::handle.run_if(is_logged_in))
+			.add_observer(ProgressiveHeightItem::handle.run_if(is_logged_in))
+			.add_observer(BonusPoints::handle.run_if(is_logged_in))
+			.add_observer(CooldownUpgrade::handle.run_if(is_logged_in))
+			.add_observer(FruitSizeUpgrade::handle.run_if(is_logged_in))
+			.add_observer(NextFruitUnlock::handle.run_if(is_logged_in))
+			.add_observer(check_spawned_fruit.run_if(is_logged_in))
+			.add_observer(on_win.run_if(is_logged_in))
+			.add_observer(on_drop_fruit.run_if(is_logged_in))
+			.add_observer(on_load_savegame.run_if(is_logged_in))
+			.add_observer(on_fruit_combo.run_if(is_logged_in))
 			.add_observer(on_aplogin)
-			.add_observer(on_drop_fruit.run_if(resource_exists::<ApClient>))
 			.add_observer(msg::on_chatbox_creation)
 			.add_systems(
 				Update,
 				(
-					set_next_scores.run_if(resource_changed::<NextThreshold>),
-					tick_cooldown,
+					set_next_scores
+						.run_if(resource_changed::<NextThreshold>.or_else(component_added::<NextThreshMarker>)),
+					tick_cooldown.run_if(in_state(GameState::Gameplay)),
 				)
-					.run_if(resource_exists::<ApClient>.and_then(in_state(GameState::Gameplay))),
+					.run_if(is_logged_in),
 			)
 			.add_systems(
 				FixedUpdate,
 				(
 					receive_archipelago_events,
 					monitor_score.run_if(in_state(GameState::Gameplay)),
+					monitor_next_fruit_vis.run_if(resource_changed::<CanSeeNextFruit>),
 				)
-					.run_if(resource_exists::<ApClient>),
+					.run_if(is_logged_in),
 			);
 	}
 }
@@ -73,6 +88,31 @@ pub struct ApClient(Client<SlotData>);
 impl ApClient {
 	pub fn new(client: Client<SlotData>) -> Self {
 		Self(client)
+	}
+
+	pub async fn login(url: String, name: String, pass: Option<String>) {
+		let mut opts = archipelago_rs::ConnectionOptions::new();
+
+		if let Some(pass) = pass {
+			opts = opts.password(pass);
+		}
+
+		info!("Starting login...");
+
+		let login_result =
+			archipelago_rs::Client::<SlotData>::connect(url, name, Some("Suikapelagame"), opts).await;
+
+		match login_result {
+			Ok(client) => {
+				info!("Login complete:\n{:#?}", client.slot_data());
+
+				AsyncWorld.insert_resource(ApClient::new(client));
+				AsyncWorld.trigger_event(ApLoginComplete);
+			}
+			Err(err) => {
+				error!(err = err.to_string(), "Failed to login to archipelago");
+			}
+		}
 	}
 }
 
@@ -137,139 +177,50 @@ pub struct ScoresanityThreshold {
 fn receive_archipelago_events(
 	mut apclient: ResMut<ApClient>,
 	mut commands: Commands,
-	mut receiving_new_items: Local<bool>,
+	mut index: Local<usize>,
 ) {
 	for event in apclient.update() {
 		match event {
 			archipelago_rs::Event::Connected => {
-				commands.queue(ApMessage::new("Client connected"));
+				commands.write_message(ApMessage::new("Client connected"));
 			}
 			archipelago_rs::Event::Updated(_) => {}
 			archipelago_rs::Event::Print(print) => {
-				commands.queue(ApMessage::from_print(&apclient.this_player().name(), print));
+				commands.write_message(ApMessage::from_print(&apclient.this_player().name(), print));
 			}
 			archipelago_rs::Event::ReceivedItems(items) => {
-				if items == 0 {
-					*receiving_new_items = true;
-					continue;
-				}
-
-				let Some(item) = ApItem::from_repr(items) else {
-					error!("Received unknown item {items}");
-					return;
-				};
-
-				commands.trigger(ReceivedItem(item));
+				info!("Received raw item: {items}");
 			}
 			archipelago_rs::Event::Error(err) => {
-				commands.trigger(ArchipelagoError(err));
+				commands.write_message(ApMessage::error(err));
 			}
 			archipelago_rs::Event::Bounce { .. } => {}
 			archipelago_rs::Event::DeathLink { source, .. } => {
-				commands.queue(ApMessage::new(format!("DeathLink received from {source}")));
+				commands.write_message(ApMessage::new(format!("DeathLink received from {source}")));
 				commands.trigger(Lose);
 			}
 			archipelago_rs::Event::KeyChanged { .. } => {}
 		}
 	}
-}
 
-#[derive(Message, Clone)]
-pub enum ApMessage {
-	Text(String),
-	Rich(String),
-}
+	let items = apclient.received_items();
 
-impl ApMessage {
-	pub fn new(msg: impl ToString) -> Self {
-		Self::Text(msg.to_string())
+	for item in &items[*index..] {
+		let id = item.item().id();
+		let Some(item) = ApItem::from_repr(id) else {
+			error!("Received unknown item {id}");
+			return;
+		};
+
+		info!("Received item: {item}");
+		commands.trigger(ReceivedItem(item));
 	}
 
-	fn from_print(player_name: &str, value: archipelago_rs::Print) -> Self {
-		let s = value
-			.data()
-			.iter()
-			.map(|t| match t {
-				archipelago_rs::RichText::Player(player) => {
-					let tag = if player.name() == player_name {
-						msg::tags::SELF
-					} else {
-						msg::tags::PLAYER
-					};
-					format!("[{tag}]{}", player.name())
-				}
-				archipelago_rs::RichText::PlayerName(name) => {
-					let tag = if name == player_name {
-						msg::tags::SELF
-					} else {
-						msg::tags::PLAYER
-					};
-					format!("[{tag}]{name}")
-				}
-				archipelago_rs::RichText::Item {
-					item,
-					progression,
-					useful,
-					trap,
-					..
-				} => {
-					let mut tags = Vec::new();
-
-					if *progression {
-						tags.push(msg::tags::PROGRESSION);
-					}
-
-					if *useful {
-						tags.push(msg::tags::USEFUL);
-					}
-
-					if *trap {
-						tags.push(msg::tags::TRAP);
-					}
-
-					let prefix = if !tags.is_empty() {
-						format!("[{}]", tags.join(","))
-					} else {
-						String::default()
-					};
-
-					format!("{prefix}{}", item.name())
-				}
-				archipelago_rs::RichText::Location { location, .. } => {
-					format!("[{}]{}", msg::tags::LOCATION, location.name())
-				}
-				archipelago_rs::RichText::EntranceName(name) => {
-					format!("[{}]{name}", msg::tags::ENTRANCE)
-				}
-				archipelago_rs::RichText::Color { text, color } => {
-					format!("[{}]{text}", msg::apclr_to_string(color.clone()))
-				}
-				archipelago_rs::RichText::Text(t) => {
-					format!("[]{t}")
-				}
-			})
-			.collect();
-		Self::Rich(s)
-	}
+	*index = items.len();
 }
 
-impl Command for ApMessage {
-	type Out = ();
-	fn apply(self, world: &mut World) -> Self::Out {
-		world.write_message(self);
-	}
-}
-
-#[derive(Event, Deref)]
-struct ArchipelagoError(archipelago_rs::Error);
-
-fn archipelago_error_handler(event: On<ArchipelagoError>, mut commands: Commands) {
-	error!("{}", event.0);
-	commands.queue(ApMessage::new(&event.0))
-}
-
-#[derive(FromRepr)]
-#[repr(usize)]
+#[derive(FromRepr, strum_macros::Display)]
+#[repr(i64)]
 enum ApItem {
 	ProgressiveHeight = 1,
 	ProgressiveFruit = 2,
@@ -302,7 +253,9 @@ impl ReceivedItem {
 			ApItem::TrapThanos => commands.trigger(ThanosTrap),
 			ApItem::TrapSecrecy => commands.trigger(SecrecyTrap(3)),
 			ApItem::TrapBlind => commands.trigger(BlindnessTrap(3)),
-			ApItem::Smoothie => (),
+			ApItem::Smoothie => {
+				commands.write_message(ApMessage::Rich(smoothie()));
+			}
 		}
 	}
 }
@@ -346,19 +299,21 @@ impl FruitSizeUpgrade {
 #[derive(Event)]
 struct NextFruitUnlock;
 
+#[derive(Resource, Reflect, Default, Deref, DerefMut)]
+#[reflect(Resource)]
+struct NextFruitUnlocked(bool);
+
 impl NextFruitUnlock {
 	fn handle(
 		_: On<Self>,
-		q_next: Query<&mut Visibility, With<NextFruitComponent>>,
 		secrecy: Res<SecrecyTurns>,
-		mut next_visible: ResMut<CanSeeNextFruit>,
+		mut next_unlocked: ResMut<NextFruitUnlocked>,
+		mut can_see_next: ResMut<CanSeeNextFruit>,
 	) {
-		**next_visible = true;
+		**next_unlocked = true;
 
 		if secrecy.inactive() {
-			for mut vis in q_next {
-				*vis = Visibility::Inherited;
-			}
+			**can_see_next = true;
 		}
 	}
 }
@@ -372,7 +327,9 @@ pub struct LoginRes<'w> {
 	fruit_order: ResMut<'w, FruitOrder>,
 	lose_height: ResMut<'w, LoseHeight>,
 	drop_delay: ResMut<'w, FruitDropDelay>,
+	next_unlocked: ResMut<'w, NextFruitUnlocked>,
 	can_see_next: ResMut<'w, CanSeeNextFruit>,
+	next_thresh: ResMut<'w, NextThreshold>,
 }
 
 fn on_aplogin(
@@ -380,12 +337,19 @@ fn on_aplogin(
 	mut commands: Commands,
 	q_scores: Query<Entity, With<ScoreComponent>>,
 	mut res: LoginRes,
+	mut previously_logged_in: Local<bool>,
 ) {
-	for entity in q_scores {
-		commands.queue_spawn_scene_list(bsn_list! [
-			ChildOf(entity) next(),
-			ChildOf(entity) drop_cooldown(),
-		]);
+	if !*previously_logged_in {
+		commands.trigger(EnableChatbox);
+
+		for entity in q_scores {
+			commands.queue_spawn_scene_list(bsn_list! [
+				ChildOf(entity) next(),
+				ChildOf(entity) drop_cooldown(),
+			]);
+		}
+
+		*previously_logged_in = true;
 	}
 
 	let slot_data = res.apclient.slot_data();
@@ -401,7 +365,19 @@ fn on_aplogin(
 	res.drop_delay.max_upgrades = slot_data.cooldown_upgrade_count;
 
 	res.fruit_order.limit = slot_data.max_fruit_size;
-	**res.can_see_next = !slot_data.next_needs_unlock;
+
+	**res.next_unlocked = !slot_data.next_needs_unlock;
+	**res.can_see_next = **res.next_unlocked;
+
+	let Some(next) = get_next_score(
+		&slot_data.scoresanity_thresholds,
+		0,
+		res.apclient.unchecked_locations(),
+	) else {
+		return;
+	};
+
+	res.next_thresh.0 = next.value;
 }
 
 #[derive(Resource, Reflect, Default)]
@@ -442,9 +418,8 @@ fn set_next_scores(
 	q_next_thresh: Query<&mut Text, With<NextThreshMarker>>,
 	next_thresh: Res<NextThreshold>,
 ) {
-	let v = next_thresh.0.to_string();
 	for mut t in q_next_thresh {
-		t.0 = v.clone();
+		t.0 = next_thresh.0.to_string();
 	}
 }
 
@@ -572,242 +547,93 @@ fn on_win(
 	}
 }
 
-mod msg {
-	use archipelago_rs::TextColor as ApTextColor;
-	use bevy::prelude::*;
-	use bevy_simple_rich_text::StyleTag;
+fn on_load_savegame(
+	event: On<LoadSavedGame>,
+	mut next_thresh: ResMut<NextThreshold>,
+	apclient: Res<ApClient>,
+) {
+	let Some(next) = get_next_score(
+		&apclient.slot_data().scoresanity_thresholds,
+		event.score,
+		apclient.unchecked_locations(),
+	) else {
+		return;
+	};
 
-	use crate::ui::components::chat::ChatComponent;
+	next_thresh.0 = next.value;
+}
 
-	pub mod tags {
-		pub const PROGRESSION: &str = "progression";
-		pub const USEFUL: &str = "useful";
-		pub const FILLER: &str = "filler";
-		pub const TRAP: &str = "trap";
-		pub const LOCATION: &str = "location";
-		pub const ENTRANCE: &str = "entrance";
-		pub const SELF: &str = "self";
-		pub const PLAYER: &str = "player";
+fn get_next_score(
+	scores: &[ScoresanityThreshold],
+	score: usize,
+	unchecked_locations: impl archipelago_rs::UnsizedIter<archipelago_rs::Location>,
+) -> Option<&ScoresanityThreshold> {
+	let unchecked_locations: HashSet<i64> = HashSet::from_iter(unchecked_locations.map(|l| l.id()));
+	scores
+		.iter()
+		.find(|t| unchecked_locations.contains(&t.location) && score < t.value)
+}
+
+fn monitor_next_fruit_vis(
+	can_see: Res<CanSeeNextFruit>,
+	q_next_fruits: Query<&mut Visibility, With<NextFruitComponent>>,
+) {
+	let v = if **can_see {
+		Visibility::Inherited
+	} else {
+		Visibility::Hidden
+	};
+
+	for mut vis in q_next_fruits {
+		*vis = v;
 	}
+}
 
-	pub fn apclr_to_string(color: ApTextColor) -> &'static str {
-		match color {
-			archipelago_rs::TextColor::Bold => "bold",
-			archipelago_rs::TextColor::Underline => "underline",
-			archipelago_rs::TextColor::Black => "black",
-			archipelago_rs::TextColor::Red => "red",
-			archipelago_rs::TextColor::Green => "green",
-			archipelago_rs::TextColor::Yellow => "yellow",
-			archipelago_rs::TextColor::Blue => "blue",
-			archipelago_rs::TextColor::Magenta => "magenta",
-			archipelago_rs::TextColor::Cyan => "cyan",
-			archipelago_rs::TextColor::White => "white",
-			archipelago_rs::TextColor::BlackBg => "black_bg",
-			archipelago_rs::TextColor::RedBg => "red_bg",
-			archipelago_rs::TextColor::GreenBg => "green_bg",
-			archipelago_rs::TextColor::YellowBg => "yellow_bg",
-			archipelago_rs::TextColor::BlueBg => "blue_bg",
-			archipelago_rs::TextColor::MagentaBg => "magenta_bg",
-			archipelago_rs::TextColor::CyanBg => "cyan_bg",
-			archipelago_rs::TextColor::WhiteBg => "white_bg",
-		}
+fn smoothie() -> String {
+	let Some(name) = petname::petname(2, " ") else {
+		return String::from("basic");
+	};
+	let Some(color) = [
+		tags::BLACK,
+		tags::RED,
+		tags::GREEN,
+		tags::YELLOW,
+		tags::BLUE,
+		tags::MAGENTA,
+		tags::CYAN,
+		tags::WHITE,
+	]
+	.choose(&mut rand::rng()) else {
+		unreachable!();
+	};
+
+	format!("You got a [{color}]{name} []smoothie!")
+}
+
+fn on_fruit_combo(event: On<FruitCombo>, mut commands: Commands, mut apclient: ResMut<ApClient>) {
+	let location = best_fruit_of(event.0);
+
+	if let Err(err) = apclient.mark_checked([location]) {
+		commands.write_message(ApMessage::error(err));
+		commands
+			.delayed()
+			.secs(1.0)
+			.trigger(FruitCombo::clone(&event));
 	}
+}
 
-	pub fn on_chatbox_creation(event: On<Add, ChatComponent>, mut commands: Commands) {
-		commands.spawn_batch([
-			(
-				ChildOf(event.event_target()),
-				ApTextStyle::from(ApTextStyleConfig {
-					tag: tags::PROGRESSION,
-					color: Color::srgb_u8(168, 147, 228),
-					weight: FontWeight::BOLD,
-				}),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::USEFUL,
-					color: Color::srgb_u8(98, 122, 198),
-					weight: FontWeight::BOLD,
-				}
-				.into(),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::FILLER,
-					color: Color::srgb_u8(6, 217, 217),
-					weight: FontWeight::BOLD,
-				}
-				.into(),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::TRAP,
-					color: Color::srgb_u8(211, 113, 102),
-					weight: FontWeight::BOLD,
-				}
-				.into(),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::LOCATION,
-					color: Color::srgb_u8(0, 255, 127),
-					weight: FontWeight::NORMAL,
-				}
-				.into(),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::ENTRANCE,
-					color: Color::srgb(0.17, 0.01, 0.46),
-					weight: FontWeight::NORMAL,
-				}
-				.into(),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::SELF,
-					color: Color::srgb_u8(238, 0, 238),
-					weight: FontWeight::BOLD,
-				}
-				.into(),
-			),
-			(
-				ChildOf(event.event_target()),
-				ApTextStyleConfig {
-					tag: tags::PLAYER,
-					color: Color::srgb_u8(150, 150, 110),
-					weight: FontWeight::BOLD,
-				}
-				.into(),
-			),
-		]);
-
-		commands.spawn((
-			ChildOf(event.event_target()),
-			StyleTag::new("bold"),
-			TextFont::from_font_weight(FontWeight::BOLD),
-		));
-
-		commands.spawn((
-			ChildOf(event.event_target()),
-			StyleTag::new("underline"),
-			Underline,
-		));
-
-		let clr = |txt_color: ApTextColor, color: Color| -> (ChildOf, StyleTag, TextColor) {
-			(
-				ChildOf(event.event_target()),
-				StyleTag::new(apclr_to_string(txt_color)),
-				TextColor(color),
-			)
-		};
-
-		let clr_bg = |txt_color: ApTextColor,
-		              color: Color,
-		              bg: Color|
-		 -> (ChildOf, StyleTag, TextColor, BackgroundColor) {
-			(
-				ChildOf(event.event_target()),
-				StyleTag::new(apclr_to_string(txt_color)),
-				TextColor(color),
-				BackgroundColor(bg),
-			)
-		};
-
-		let bg = |txt_color: ApTextColor, color: Color| -> (ChildOf, StyleTag, BackgroundColor) {
-			(
-				ChildOf(event.event_target()),
-				StyleTag::new(apclr_to_string(txt_color)),
-				BackgroundColor(color),
-			)
-		};
-
-		commands.spawn_batch([
-			clr(ApTextColor::Black, Color::BLACK),
-			clr(ApTextColor::Red, Color::srgb_u8(255, 64, 63)),
-			clr(ApTextColor::Blue, Color::srgb_u8(63, 64, 255)),
-			clr(ApTextColor::Magenta, Color::srgb_u8(255, 127, 255)),
-		]);
-
-		commands.spawn_batch([
-			clr_bg(
-				ApTextColor::Green,
-				Color::srgb_u8(0, 255, 127),
-				Color::srgba(0.0, 0.0, 0.0, 0.25),
-			),
-			clr_bg(
-				ApTextColor::Yellow,
-				Color::srgb_u8(255, 255, 127),
-				Color::srgba(0.0, 0.0, 0.0, 0.5),
-			),
-			clr_bg(
-				ApTextColor::Cyan,
-				Color::srgb_u8(127, 255, 255),
-				Color::srgba(0.0, 0.0, 0.0, 0.5),
-			),
-			clr_bg(
-				ApTextColor::White,
-				Color::WHITE,
-				Color::srgba(0.0, 0.0, 0.0, 0.5),
-			),
-			clr_bg(
-				ApTextColor::BlackBg,
-				Color::srgb_u8(0xcc, 0xcc, 0xcc),
-				Color::BLACK,
-			),
-			clr_bg(
-				ApTextColor::BlueBg,
-				Color::srgb_u8(0xcc, 0xcc, 0xcc),
-				Color::srgb_u8(63, 64, 255),
-			),
-		]);
-
-		commands.spawn_batch([
-			bg(ApTextColor::RedBg, Color::srgb_u8(255, 64, 63)),
-			bg(ApTextColor::GreenBg, Color::srgb_u8(0, 255, 127)),
-			bg(ApTextColor::YellowBg, Color::srgb_u8(255, 255, 127)),
-			bg(ApTextColor::MagentaBg, Color::srgb_u8(255, 127, 255)),
-			bg(ApTextColor::CyanBg, Color::srgb_u8(127, 255, 255)),
-			bg(ApTextColor::WhiteBg, Color::WHITE),
-		]);
-	}
-
-	#[derive(Bundle)]
-	struct ApTextStyle {
-		tag: StyleTag,
-		color: TextColor,
-		font: TextFont,
-	}
-
-	struct ApTextStyleConfig<T, C, W>
-	where
-		T: ToString,
-		C: Into<Color>,
-		W: Into<FontWeight>,
-	{
-		tag: T,
-		color: C,
-		weight: W,
-	}
-
-	impl<T, C, W> From<ApTextStyleConfig<T, C, W>> for ApTextStyle
-	where
-		T: ToString,
-		C: Into<Color>,
-		W: Into<FontWeight>,
-	{
-		fn from(value: ApTextStyleConfig<T, C, W>) -> Self {
-			Self {
-				tag: StyleTag(value.tag.to_string()),
-				color: TextColor(value.color.into()),
-				font: TextFont::from_font_weight(value.weight.into()),
-			}
-		}
+fn best_fruit_of(fruit: FruitKind) -> i64 {
+	match fruit {
+		FruitKind::Cherry => 1,
+		FruitKind::Strawberry => 2,
+		FruitKind::Grapes => 3,
+		FruitKind::Dekopon => 4,
+		FruitKind::Persimmon => 5,
+		FruitKind::Apple => 6,
+		FruitKind::Pear => 7,
+		FruitKind::Peach => 8,
+		FruitKind::Pineapple => 9,
+		FruitKind::Melon => 10,
+		FruitKind::Watermelon => 11,
 	}
 }
