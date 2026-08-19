@@ -2,7 +2,9 @@ use crate::{
 	component_name,
 	game::archipelago::{ApClient, msg::ApMessage},
 	ui::components::AppEditableText,
+	util::component_exists,
 };
+use archipelago_rs::ConnectionState;
 use bevy::{
 	color::palettes::tailwind::{SLATE_400, SLATE_800},
 	input::mouse::{MouseScrollUnit, MouseWheel},
@@ -24,7 +26,10 @@ impl Plugin for ChatPlugin {
 			.add_observer(dump_queue)
 			.add_observer(cmd::Args::handle)
 			.add_systems(Update, (send_scroll_events, on_submit))
-			.add_systems(FixedUpdate, on_ap_message);
+			.add_systems(
+				FixedUpdate,
+				on_ap_message.run_if(component_exists::<ChatInput>),
+			);
 	}
 }
 
@@ -104,8 +109,8 @@ fn on_submit(
 	mut commands: Commands,
 	input_focus: Res<InputFocus>,
 	keyboard: Res<ButtonInput<KeyCode>>,
-	mut q_input: Query<&mut EditableText>,
-	apclient: Option<ResMut<ApClient>>,
+	mut q_input: Query<&mut EditableText, With<ChatInput>>,
+	mut apclient: ResMut<ApClient>,
 ) -> Result {
 	if keyboard.just_pressed(KeyCode::Enter)
 		&& let Some(focused) = input_focus.get()
@@ -128,7 +133,7 @@ fn on_submit(
 			return Ok(());
 		}
 
-		let Some(mut apclient) = apclient else {
+		let ConnectionState::Connected(apclient) = apclient.state_mut() else {
 			commands.queue(ApMessage::new(msg));
 			text.editor.set_text("");
 			return Ok(());
@@ -292,8 +297,8 @@ fn dump_queue(event: On<Add, ChatBox>, mut commands: Commands, mut queue: ResMut
 }
 
 mod cmd {
+	use archipelago_rs::ConnectionState;
 	use bevy::prelude::*;
-	use bevy_defer::AsyncCommandsExtension;
 	use clap::{Parser, Subcommand};
 	use itertools::Itertools;
 
@@ -337,10 +342,10 @@ mod cmd {
 	}
 
 	impl Args {
-		pub fn handle(event: On<Self>, mut commands: Commands, apclient: Option<ResMut<ApClient>>) {
+		pub fn handle(event: On<Self>, mut commands: Commands, mut apclient: ResMut<ApClient>) {
 			match &event.command {
 				Command::Sync => {
-					let Some(mut apclient) = apclient else {
+					let ConnectionState::Connected(apclient) = apclient.state_mut() else {
 						return;
 					};
 
@@ -361,16 +366,14 @@ mod cmd {
 					let url = url.clone();
 					let name = name.clone();
 					let password = password.clone();
-					commands.spawn_task(|| async {
-						ApClient::login(url, name, password).await;
-						Ok(())
-					});
+					let apclient = ApClient::login(url, name, password);
+					commands.insert_resource(apclient);
 				}
 				Command::NewGame => {
 					commands.trigger(NewGame);
 				}
 				Command::Locations { checked, unchecked } => {
-					let Some(apclient) = apclient else {
+					let ConnectionState::Connected(apclient) = apclient.state() else {
 						return;
 					};
 
@@ -410,7 +413,7 @@ mod cmd {
 					}
 				}
 				Command::Items => {
-					let Some(apclient) = apclient else {
+					let ConnectionState::Connected(apclient) = apclient.state() else {
 						return;
 					};
 
@@ -422,7 +425,7 @@ mod cmd {
 					commands.write_message(ApMessage::new(msg));
 				}
 				Command::Cheat { location } => {
-					let Some(mut apclient) = apclient else {
+					let ConnectionState::Connected(apclient) = apclient.state_mut() else {
 						return;
 					};
 

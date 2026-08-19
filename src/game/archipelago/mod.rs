@@ -23,9 +23,8 @@ use crate::{
 	},
 	util::component_added,
 };
-use archipelago_rs::{Client, ClientStatus};
+use archipelago_rs::{ClientStatus, Connection, ItemHandling};
 use bevy::{ecs::system::SystemParam, platform::collections::HashSet, prelude::*};
-use bevy_defer::AsyncWorld;
 use msg::ApMessage;
 use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
@@ -40,12 +39,15 @@ pub struct ArchipelagoPlugin;
 
 impl Plugin for ArchipelagoPlugin {
 	fn build(&self, app: &mut App) {
-		let is_logged_in = resource_exists::<ApClient>;
+		fn is_logged_in(apclient: Res<ApClient>) -> bool {
+			apclient.is_connected()
+		};
 
 		app
 			.init_resource::<NextThreshold>()
 			.init_resource::<FruitDropCooldown>()
 			.init_resource::<NextFruitUnlocked>()
+			.init_resource::<ApClient>()
 			.add_message::<ApMessage>()
 			.add_plugins(TrapPlugin)
 			.add_observer(ReceivedItem::handle.run_if(is_logged_in))
@@ -74,45 +76,32 @@ impl Plugin for ArchipelagoPlugin {
 				FixedUpdate,
 				(
 					receive_archipelago_events,
-					monitor_score.run_if(in_state(GameState::Gameplay)),
-					monitor_next_fruit_vis.run_if(resource_changed::<CanSeeNextFruit>),
-				)
-					.run_if(is_logged_in),
+					(
+						monitor_score.run_if(in_state(GameState::Gameplay)),
+						monitor_next_fruit_vis.run_if(resource_changed::<CanSeeNextFruit>),
+					)
+						.run_if(is_logged_in),
+				),
 			);
 	}
 }
 
-#[derive(Resource, Deref, DerefMut)]
-pub struct ApClient(Client<SlotData>);
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct ApClient(Connection<SlotData>);
 
 impl ApClient {
-	pub fn new(client: Client<SlotData>) -> Self {
-		Self(client)
-	}
-
-	pub async fn login(url: String, name: String, pass: Option<String>) {
-		let mut opts = archipelago_rs::ConnectionOptions::new();
+	pub fn login(url: String, name: String, pass: Option<String>) -> Self {
+		let mut opts =
+			archipelago_rs::ConnectionOptions::new().receive_items(ItemHandling::OtherWorlds {
+				own_world: true,
+				starting_inventory: true,
+			});
 
 		if let Some(pass) = pass {
 			opts = opts.password(pass);
 		}
 
-		info!("Starting login...");
-
-		let login_result =
-			archipelago_rs::Client::<SlotData>::connect(url, name, Some("Suikapelagame"), opts).await;
-
-		match login_result {
-			Ok(client) => {
-				info!("Login complete:\n{:#?}", client.slot_data());
-
-				AsyncWorld.insert_resource(ApClient::new(client));
-				AsyncWorld.trigger_event(ApLoginComplete);
-			}
-			Err(err) => {
-				error!(err = err.to_string(), "Failed to login to archipelago");
-			}
-		}
+		Self(Connection::new(url, name, Some("Suikapelagame"), opts))
 	}
 }
 
@@ -174,22 +163,61 @@ pub struct ScoresanityThreshold {
 	location: i64,
 }
 
-fn receive_archipelago_events(
-	mut apclient: ResMut<ApClient>,
-	mut commands: Commands,
-	mut index: Local<usize>,
-) {
+fn receive_archipelago_events(mut apclient: ResMut<ApClient>, mut commands: Commands) {
 	for event in apclient.update() {
 		match event {
 			archipelago_rs::Event::Connected => {
-				commands.write_message(ApMessage::new("Client connected"));
+				commands.trigger(ApLoginComplete);
+
+				let Some(apclient) = apclient.client() else {
+					continue;
+				};
+
+				for item in apclient.received_items() {
+					let id = item.item().id();
+					let Some(item_type) = ApItem::from_repr(id) else {
+						error!("Received unknown item {id}");
+						return;
+					};
+
+					if item_type.received_on_startup() {
+						commands.trigger(ReceivedItem {
+							item: item_type,
+							location: item.location().id(),
+						});
+					}
+				}
 			}
 			archipelago_rs::Event::Updated(_) => {}
 			archipelago_rs::Event::Print(print) => {
+				let Some(apclient) = apclient.client() else {
+					continue;
+				};
 				commands.write_message(ApMessage::from_print(&apclient.this_player().name(), print));
 			}
-			archipelago_rs::Event::ReceivedItems(items) => {
-				info!("Received raw item: {items}");
+			archipelago_rs::Event::ReceivedItems(index) => {
+				if index == 0 {
+					continue;
+				}
+
+				let Some(apclient) = apclient.client() else {
+					continue;
+				};
+
+				let items = apclient.received_items();
+
+				for item in &items[index..] {
+					let id = item.item().id();
+					let Some(item_type) = ApItem::from_repr(id) else {
+						error!("Received unknown item {id}");
+						return;
+					};
+
+					commands.trigger(ReceivedItem {
+						item: item_type,
+						location: item.location().id(),
+					});
+				}
 			}
 			archipelago_rs::Event::Error(err) => {
 				commands.write_message(ApMessage::error(err));
@@ -202,21 +230,6 @@ fn receive_archipelago_events(
 			archipelago_rs::Event::KeyChanged { .. } => {}
 		}
 	}
-
-	let items = apclient.received_items();
-
-	for item in &items[*index..] {
-		let id = item.item().id();
-		let Some(item) = ApItem::from_repr(id) else {
-			error!("Received unknown item {id}");
-			return;
-		};
-
-		info!("Received item: {item}");
-		commands.trigger(ReceivedItem(item));
-	}
-
-	*index = items.len();
 }
 
 #[derive(FromRepr, strum_macros::Display)]
@@ -236,12 +249,32 @@ enum ApItem {
 	Smoothie = 12,
 }
 
+impl ApItem {
+	fn received_on_startup(&self) -> bool {
+		matches!(
+			self,
+			Self::ProgressiveHeight
+				| Self::ProgressiveFruit
+				| Self::ProgressiveNext
+				| Self::UsefulDropCooldown
+		)
+	}
+}
+
 #[derive(Event)]
-struct ReceivedItem(ApItem);
+struct ReceivedItem {
+	item: ApItem,
+	location: i64,
+}
 
 impl ReceivedItem {
-	fn handle(event: On<Self>, mut commands: Commands) {
-		match event.0 {
+	fn handle(event: On<Self>, mut commands: Commands, mut locations_received: Local<HashSet<i64>>) {
+		if locations_received.contains(&event.location) {
+			return;
+		}
+
+		locations_received.insert(event.location);
+		match event.item {
 			ApItem::ProgressiveHeight => commands.trigger(ProgressiveHeightItem(1)),
 			ApItem::ProgressiveFruit => commands.trigger(FruitSizeUpgrade(1)),
 			ApItem::ProgressiveNext => commands.trigger(NextFruitUnlock),
@@ -352,7 +385,11 @@ fn on_aplogin(
 		*previously_logged_in = true;
 	}
 
-	let slot_data = res.apclient.slot_data();
+	let Some(apclient) = res.apclient.client() else {
+		unreachable!("Logic error");
+	};
+
+	let slot_data = apclient.slot_data();
 	if let Some(shuffled) = slot_data.shuffle_fruit {
 		res
 			.fruit_order
@@ -372,7 +409,7 @@ fn on_aplogin(
 	let Some(next) = get_next_score(
 		&slot_data.scoresanity_thresholds,
 		0,
-		res.apclient.unchecked_locations(),
+		apclient.unchecked_locations(),
 	) else {
 		return;
 	};
@@ -391,6 +428,10 @@ fn monitor_score(
 	mut index: Local<usize>,
 	mut next_threshold: ResMut<NextThreshold>,
 ) {
+	let Some(apclient) = apclient.client_mut() else {
+		return;
+	};
+
 	let slot_data = apclient.slot_data();
 
 	if slot_data.goal.win_by_score() && *index >= slot_data.scoresanity_thresholds.len() {
@@ -515,6 +556,10 @@ fn check_spawned_fruit(
 		unreachable!();
 	};
 
+	let Some(apclient) = apclient.client() else {
+		return;
+	};
+
 	let slot_data = apclient.slot_data();
 
 	if event.fruit.kind == last.kind && slot_data.goal.win_by_fruit() {
@@ -528,6 +573,10 @@ fn on_win(
 	mut apclient: ResMut<ApClient>,
 	mut retry: Local<f32>,
 ) {
+	let Some(apclient) = apclient.client_mut() else {
+		return;
+	};
+
 	if let Err(err) = apclient.set_status(ClientStatus::Goal) {
 		error!(
 			err = err.to_string(),
@@ -552,6 +601,10 @@ fn on_load_savegame(
 	mut next_thresh: ResMut<NextThreshold>,
 	apclient: Res<ApClient>,
 ) {
+	let Some(apclient) = apclient.client() else {
+		return;
+	};
+
 	let Some(next) = get_next_score(
 		&apclient.slot_data().scoresanity_thresholds,
 		event.score,
@@ -594,7 +647,6 @@ fn smoothie() -> String {
 		return String::from("basic");
 	};
 	let Some(color) = [
-		tags::BLACK,
 		tags::RED,
 		tags::GREEN,
 		tags::YELLOW,
@@ -611,6 +663,10 @@ fn smoothie() -> String {
 }
 
 fn on_fruit_combo(event: On<FruitCombo>, mut commands: Commands, mut apclient: ResMut<ApClient>) {
+	let Some(apclient) = apclient.client_mut() else {
+		return;
+	};
+
 	let location = best_fruit_of(event.0);
 
 	if let Err(err) = apclient.mark_checked([location]) {

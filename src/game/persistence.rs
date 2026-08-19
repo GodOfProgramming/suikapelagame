@@ -76,7 +76,7 @@ struct SaveParams<'w, 's> {
 	order: Res<'w, FruitOrder>,
 	secrecy: Res<'w, SecrecyTurns>,
 	blindness: Res<'w, BlindnessTurns>,
-	apclient: Option<Res<'w, ApClient>>,
+	apclient: Res<'w, ApClient>,
 }
 
 #[derive(Event)]
@@ -100,6 +100,7 @@ impl SaveGame {
 
 		let retain_size = params
 			.apclient
+			.client()
 			.map(|apclient| apclient.slot_data().also_shuffle_sizes)
 			.unwrap_or_default();
 

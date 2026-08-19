@@ -2,8 +2,10 @@ use std::marker::PhantomData;
 
 use super::AppEditableText;
 use crate::{component_name, game::archipelago::ApClient, ui::components::AppButton};
-use bevy::{ecs::system::SystemParam, prelude::*, text::EditableText, ui::FlexDirection};
-use bevy_defer::AsyncCommandsExtension;
+use bevy::{
+	ecs::system::SystemParam, input_focus::InputFocus, prelude::*, text::EditableText,
+	ui::FlexDirection,
+};
 
 #[derive(SceneComponent, Default, Clone)]
 pub struct LoginFormComponent;
@@ -51,7 +53,7 @@ fn login_form() -> impl Scene {
 			@AppButton
 			Node { justify_content: JustifyContent::Center }
 			Children [ Text::new("Login") TextColor::BLACK ]
-			on(on_login_click)
+			on(on_login_click),
 		]
 	}
 }
@@ -72,11 +74,11 @@ struct HostInput;
 struct PortInput;
 
 #[derive(Component, Default, Clone)]
-struct NameInput;
+pub struct NameInput;
 
 #[derive(Component, Default, Clone)]
 #[require(EditableText)]
-struct PasswordInput;
+pub struct PasswordInput;
 
 #[derive(SceneComponent, Default, Clone)]
 #[scene(FormInputProps<C>)]
@@ -106,14 +108,35 @@ where
 }
 
 #[derive(SystemParam)]
-struct FormData<'w, 's> {
+pub struct FormData<'w, 's> {
 	host: Single<'w, 's, &'static EditableText, With<HostInput>>,
 	port: Single<'w, 's, &'static EditableText, With<PortInput>>,
 	name: Single<'w, 's, &'static EditableText, With<NameInput>>,
 	pass: Single<'w, 's, &'static EditableText, With<PasswordInput>>,
 }
 
+pub fn on_submit(
+	commands: Commands,
+	input_focus: Res<InputFocus>,
+	keyboard: Res<ButtonInput<KeyCode>>,
+	q_input: Query<&EditableText, Or<(With<NameInput>, With<PasswordInput>)>>,
+	data: FormData,
+) -> Result {
+	if keyboard.just_pressed(KeyCode::Enter)
+		&& let Some(focused) = input_focus.get()
+		&& q_input.contains(focused)
+	{
+		do_login(commands, data)?;
+	}
+
+	Ok(())
+}
+
 fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData) -> Result {
+	do_login(commands, data)
+}
+
+fn do_login(mut commands: Commands, data: FormData) -> Result {
 	let host = data.host.value().to_string();
 	let port = data.port.value().to_string();
 	let name = data.name.value().to_string();
@@ -136,10 +159,8 @@ fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData)
 	}
 
 	let url = format!("{host}:{port}");
-	commands.spawn_task(|| async {
-		ApClient::login(url, name, if pass.is_empty() { None } else { Some(pass) }).await;
-		Ok(())
-	});
+	let apclient = ApClient::login(url, name, if pass.is_empty() { None } else { Some(pass) });
+	commands.insert_resource(apclient);
 
 	Ok(())
 }

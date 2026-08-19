@@ -1,6 +1,6 @@
 {
   "game": "Suikapelagame",
-  "minimum_ap_version": "0.6.7",
+  "minimum_ap_version": "0.6.6",
   "world_version": "0.0.1",
   "authors": [
     "Starwort",

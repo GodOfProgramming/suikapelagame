@@ -4,13 +4,14 @@ use crate::{
 	GameCamera, GameState,
 	game::{
 		WORLD_DIM,
-		archipelago::{ApClient, ApLoginComplete},
+		archipelago::ApLoginComplete,
 		evt::{DropPlaceholder, MovePlaceholder},
 	},
 	ui::components::{
-		AppButton, appzone,
+		appzone,
 		chat::{ChatComponent, ChatPlugin},
 		fruit_circle::FruitCirclePlugin,
+		login_form,
 		lose_popup::LosePopupPlugin,
 		next_fruit::NextFruitPlugin,
 		saveload::SaveLoadComponent,
@@ -19,7 +20,7 @@ use crate::{
 		win_popup::WinPopupPlugin,
 	},
 	util::{
-		despawn_query,
+		component_exists, despawn_query,
 		events::{send_event, send_event_on},
 	},
 };
@@ -71,7 +72,11 @@ impl Plugin for UiPlugin {
 				OnExit(GameState::Gameplay),
 				despawn_query::<With<SaveLoadComponent>>,
 			)
-			.add_systems(OnEnter(GameState::InitGameplay), init_game_view);
+			.add_systems(OnEnter(GameState::InitGameplay), init_game_view)
+			.add_systems(
+				FixedUpdate,
+				login_form::on_submit.run_if(component_exists::<LoginFormComponent>),
+			);
 	}
 }
 

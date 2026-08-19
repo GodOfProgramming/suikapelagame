@@ -29,11 +29,11 @@ impl Lose {
 	fn handle(
 		_: On<Self>,
 		mut game_state: ResMut<NextState<GameState>>,
-		apclient: Option<ResMut<ApClient>>,
+		mut apclient: ResMut<ApClient>,
 	) -> Result {
 		game_state.set(GameState::LoseGame);
 
-		let Some(mut apclient) = apclient else {
+		let Some(apclient) = apclient.client_mut() else {
 			return Ok(());
 		};
 
