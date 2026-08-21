@@ -71,6 +71,28 @@ fn main() {
 		.run();
 }
 
+///
+///                  ┌────────────┐
+///                  │  MainMenu  │
+///                  └──────┬─────┘
+///                         │
+///                         │
+///                         │
+///                ┌────────▼────────┐
+///                │  Init Gameplay  │
+///                └────────┬────────┘
+///                         │
+///                         │
+///                         │
+///                   ┌─────▼──────┐
+///      ┌───────────►│  New Game  │◄─────────────┐
+///      │            └───┬─────┬──┘              │
+///      │                │     │                 │
+///      │       Win      │     │Lose             │
+/// ┌────┴─────┐ Condition│     │Condition  ┌─────┴─────┐
+/// │ Win Game │◄─────────┘     └──────────►│ Lose Game │
+/// └──────────┘                            └───────────┘
+
 #[derive(
 	States, Debug, Hash, PartialEq, Eq, Clone, Copy, strum_macros::EnumIter, strum_macros::Display,
 )]
