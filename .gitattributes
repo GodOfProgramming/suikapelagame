@@ -1,0 +1,2 @@
+assets/binary/**/* filter=lfs diff=lfs merge=lfs
+apworld/icon.png filter=lfs diff=lfs merge=lfs
