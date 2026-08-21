@@ -9,6 +9,7 @@ use crate::{
 		scn::{PlaceholderFruit, WALL_PAD},
 		termination::lose::LoseHeight,
 	},
+	ui::components::chat::msg::ChatMessage,
 };
 use avian2d::dynamics::rigid_body::LinearVelocity;
 use bevy::prelude::*;
@@ -195,18 +196,28 @@ impl BlindnessCover {
 
 fn reduce_secrecy(
 	_: On<PlaceholderDropped>,
+	mut commands: Commands,
 	mut secrecy: ResMut<SecrecyTurns>,
 	mut can_see_next: ResMut<CanSeeNextFruit>,
 	next_unlocked: Res<NextFruitUnlocked>,
 	q_placeholder: Query<&mut Visibility, With<PlaceholderFruit>>,
 ) {
 	// last secrecy turn
-	if secrecy.0 == 1 && **next_unlocked {
-		**can_see_next = true;
+	if secrecy.0 == 1 {
+		if **next_unlocked {
+			**can_see_next = true;
 
-		for mut vis in q_placeholder {
-			*vis = Visibility::Inherited;
+			for mut vis in q_placeholder {
+				*vis = Visibility::Inherited;
+			}
 		}
+
+		commands.write_message(ChatMessage::text("Secrecy finished"));
+	} else if secrecy.0 > 1 {
+		commands.write_message(ChatMessage::text(format!(
+			"{} secrecy turns remaining.",
+			secrecy.0
+		)));
 	}
 
 	secrecy.0 = secrecy.0.saturating_sub(1);
@@ -222,6 +233,13 @@ fn reduce_blindness(
 		for entity in q_covers {
 			commands.entity(entity).despawn();
 		}
+
+		commands.write_message(ChatMessage::text("Blindness finished"));
+	} else if blindness.0 > 1 {
+		commands.write_message(ChatMessage::text(format!(
+			"{} blindness turns remaining.",
+			blindness.0
+		)));
 	}
 
 	blindness.0 = blindness.0.saturating_sub(1);

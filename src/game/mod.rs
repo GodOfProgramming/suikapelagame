@@ -8,12 +8,8 @@ pub mod termination;
 
 use crate::{
 	GameState,
-	game::{
-		evt::{FruitCombo, NewGame},
-		res::ResPlugin,
-		termination::TerminationPlugin,
-	},
-	util::events::send_event,
+	game::evt::SetCooldown,
+	util::events::{send_event, send_event_on},
 };
 use archipelago::ArchipelagoPlugin;
 use avian2d::prelude::*;
@@ -28,13 +24,17 @@ use bevy::{
 use bevy_prng::WyRand;
 use bevy_rand::global::GlobalRng;
 use cmp::Invincible;
-use evt::{DropPlaceholder, MovePlaceholder, SpawnFruit};
+use evt::{DropPlaceholder, FruitCombo, MovePlaceholder, NewGame, PlaceholderDropped, SpawnFruit};
 use persistence::PersistencePlugin;
 use rand::RngExt;
-use res::{FruitOrder, MinVelocityFirstDropThresh, PlaceholderPosition, Score, StaticAssets};
+use res::{
+	FruitDropCooldown, FruitOrder, MinVelocityFirstDropThresh, NextFruit, PlaceholderPosition,
+	ResPlugin, Score, StaticAssets,
+};
 use scn::{FruitBody, PlaceholderFruit, level};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::f32::consts::TAU;
+use termination::TerminationPlugin;
 use termination::lose::LoseHeight;
 
 pub const GAME_RENDER_LAYER: RenderLayers = RenderLayers::layer(1);
@@ -65,6 +65,8 @@ impl Plugin for GamePlugin {
 			.add_observer(MovePlaceholder::handle.run_if(in_state(GameState::Gameplay)))
 			.add_observer(DropPlaceholder::handle.run_if(in_state(GameState::Gameplay)))
 			.add_observer(NewGame::handle.run_if(in_state(GameState::Gameplay)))
+			.add_observer(SetCooldown::handle.run_if(in_state(GameState::Gameplay)))
+			.add_observer(send_event_on::<PlaceholderDropped, ()>(SetCooldown(None)))
 			.add_systems(
 				OnEnter(GameState::InitGameplay),
 				(level.spawn(), init_gameplay),
@@ -74,7 +76,10 @@ impl Plugin for GamePlugin {
 				First,
 				move_placeholder_location.run_if(in_state(GameState::Gameplay)),
 			)
-			.add_systems(Update, draw_gizmos)
+			.add_systems(
+				Update,
+				(draw_gizmos, tick_cooldown).run_if(in_state(GameState::Gameplay)),
+			)
 			.add_systems(
 				FixedUpdate,
 				(on_collisions, remove_invincibility).run_if(in_state(GameState::Gameplay)),
@@ -353,14 +358,6 @@ impl FruitKind {
 	pub const fn radius(self) -> f32 {
 		self.data().radius
 	}
-
-	pub const fn sprite(self) -> &'static str {
-		self.data().sprite
-	}
-
-	pub const fn weight(self) -> Option<usize> {
-		self.data().weight
-	}
 }
 
 fn on_new_fruit_body(event: On<Add, FruitBody>, mut commands: Commands) {
@@ -387,4 +384,28 @@ fn remove_invincibility(
 			commands.entity(entity).remove::<Invincible>();
 		}
 	}
+}
+
+fn tick_cooldown(
+	mut commands: Commands,
+	mut cooldown: ResMut<FruitDropCooldown>,
+	mut next_fruit: ResMut<NextFruit>,
+	fruit_order: Res<FruitOrder>,
+	time: Res<Time>,
+	placeholder_pos: Res<PlaceholderPosition>,
+	mut rng: Single<&mut WyRand, With<GlobalRng>>,
+	q_placeholders: Query<(), With<PlaceholderFruit>>,
+) {
+	// info!("times finished = {}", cooldown.times_finished_this_tick());
+	if cooldown.just_finished() && q_placeholders.is_empty() {
+		let fruit = next_fruit.get(&fruit_order, &mut rng);
+		commands.queue_spawn_scene(bsn! {
+			@PlaceholderFruit {
+				@fruit: fruit,
+				@x: { placeholder_pos.x },
+			}
+		});
+	}
+
+	cooldown.tick(time.delta());
 }

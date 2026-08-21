@@ -5,13 +5,13 @@ use bevy::prelude::*;
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Message, Clone)]
-pub enum ApMessage {
+pub enum ChatMessage {
 	Text(String),
 	Rich(RichText),
 }
 
-impl ApMessage {
-	pub fn new(msg: impl ToString) -> Self {
+impl ChatMessage {
+	pub fn text(msg: impl ToString) -> Self {
 		Self::Text(msg.to_string())
 	}
 
@@ -87,7 +87,7 @@ impl ApMessage {
 	}
 }
 
-impl Command for ApMessage {
+impl Command for ChatMessage {
 	type Out = ();
 	fn apply(self, world: &mut World) -> Self::Out {
 		world.write_message(self);

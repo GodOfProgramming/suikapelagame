@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::{FruitData, FruitKind};
 use crate::game::Fruit;
 use bevy::prelude::*;
@@ -10,14 +12,15 @@ pub struct ResPlugin;
 impl Plugin for ResPlugin {
 	fn build(&self, app: &mut App) {
 		app
-			.init_resource::<PlaceholderPosition>()
-			.init_resource::<NextFruit>()
-			.init_resource::<StaticAssets>()
-			.init_resource::<Score>()
+			.init_resource::<CanSeeNextFruit>()
 			.init_resource::<FruitDropDelay>()
+			.init_resource::<FruitDropCooldown>()
 			.init_resource::<FruitOrder>()
 			.init_resource::<MinVelocityFirstDropThresh>()
-			.init_resource::<CanSeeNextFruit>();
+			.init_resource::<NextFruit>()
+			.init_resource::<PlaceholderPosition>()
+			.init_resource::<Score>()
+			.init_resource::<StaticAssets>();
 	}
 }
 
@@ -220,5 +223,19 @@ impl FromWorld for StaticAssets {
 				FruitKind::Watermelon => world.load_asset("binary/audio/watermelon.mp3"),
 			},
 		}
+	}
+}
+
+#[derive(Resource, Reflect, Deref, DerefMut)]
+#[reflect(Resource)]
+pub struct FruitDropCooldown(Timer);
+
+impl FromWorld for FruitDropCooldown {
+	fn from_world(world: &mut World) -> Self {
+		let delay = world.resource::<FruitDropDelay>();
+		Self(Timer::new(
+			Duration::from_secs_f32(delay.delay()),
+			TimerMode::Once,
+		))
 	}
 }

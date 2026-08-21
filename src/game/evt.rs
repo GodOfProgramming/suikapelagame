@@ -1,7 +1,12 @@
+use std::time::Duration;
+
 use crate::game::{
 	Fruit, FruitKind,
 	cmp::Invincible,
-	res::{FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score, StaticAssets},
+	res::{
+		FruitDropCooldown, FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score,
+		StaticAssets,
+	},
 	scn::{FruitBody, PlaceholderFruit},
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
@@ -21,26 +26,16 @@ impl MovePlaceholder {
 #[derive(Event, Clone)]
 pub struct DropPlaceholder;
 
-#[derive(SystemParam)]
-pub struct DropPlaceholderRes<'w> {
-	next_fruit: ResMut<'w, NextFruit>,
-	static_assets: Res<'w, StaticAssets>,
-	placeholder_pos: Res<'w, PlaceholderPosition>,
-	drop_delay: Res<'w, FruitDropDelay>,
-	order: Res<'w, FruitOrder>,
-	time: Res<'w, Time>,
-}
-
 impl DropPlaceholder {
 	pub fn handle(
 		_: On<Self>,
 		mut commands: Commands,
 		placeholder: Single<(Entity, &Fruit, &Transform), With<PlaceholderFruit>>,
-		mut rng: Single<&mut WyRand, With<GlobalRng>>,
-		mut res: DropPlaceholderRes,
+		static_assets: Res<StaticAssets>,
+		time: Res<Time>,
 	) {
 		let (entity, fruit, tf) = *placeholder;
-		let elapsed = res.time.elapsed_secs();
+		let elapsed = time.elapsed_secs();
 		commands
 			.entity(entity)
 			.remove::<PlaceholderFruit>()
@@ -53,21 +48,9 @@ impl DropPlaceholder {
 			});
 
 		commands.spawn((
-			AudioPlayer::new(res.static_assets.click.clone()),
+			AudioPlayer::new(static_assets.click.clone()),
 			PlaybackSettings::DESPAWN,
 		));
-
-		let fruit = res.next_fruit.get(&res.order, &mut rng);
-
-		commands
-			.delayed()
-			.secs(res.drop_delay.delay())
-			.queue_spawn_scene(bsn! {
-				@PlaceholderFruit {
-					@fruit: fruit,
-					@x: { res.placeholder_pos.x },
-				}
-			});
 
 		commands.trigger(PlaceholderDropped);
 	}
@@ -136,3 +119,30 @@ impl NewGame {
 
 #[derive(Event, Clone, Deref)]
 pub struct FruitCombo(pub FruitKind);
+
+#[derive(Event, Clone)]
+pub struct SetCooldown(pub Option<f32>);
+
+impl SetCooldown {
+	pub fn handle(
+		event: On<Self>,
+		mut commands: Commands,
+		mut cooldown: ResMut<FruitDropCooldown>,
+		delay: Res<FruitDropDelay>,
+		q_placeholders: Query<Entity, With<PlaceholderFruit>>,
+	) {
+		let cooldown_secs = event.0.unwrap_or_else(|| delay.delay());
+
+		if cooldown_secs > 0.0 {
+			info!("event: {:?}, cooldown secs: {cooldown_secs}", event.0);
+			cooldown.reset();
+
+			cooldown.set_duration(Duration::from_secs_f32(cooldown_secs));
+			for entity in q_placeholders {
+				commands.entity(entity).despawn();
+			}
+		} else if !cooldown.is_finished() {
+			cooldown.finish();
+		}
+	}
+}

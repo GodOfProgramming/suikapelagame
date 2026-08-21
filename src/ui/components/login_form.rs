@@ -132,7 +132,7 @@ pub fn on_submit(
 	Ok(())
 }
 
-fn on_login_click(_: On<Pointer<Click>>, mut commands: Commands, data: FormData) -> Result {
+fn on_login_click(_: On<Pointer<Click>>, commands: Commands, data: FormData) -> Result {
 	do_login(commands, data)
 }
 

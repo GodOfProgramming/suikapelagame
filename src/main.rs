@@ -1,3 +1,7 @@
+// for systems
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+
 mod game;
 mod ui;
 mod util;

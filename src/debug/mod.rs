@@ -8,13 +8,11 @@ use crate::{
 	GameState,
 	game::{
 		Fruit,
-		archipelago::{
-			msg::ApMessage,
-			traps::{BlindnessTrap, ImpulseTrap},
-		},
+		archipelago::traps::{BlindnessTrap, ImpulseTrap},
 		res::FruitOrder,
 		termination::lose::LoseHeight,
 	},
+	ui::components::chat::msg::ChatMessage,
 };
 
 pub struct DebugPlugin;
@@ -114,7 +112,7 @@ impl EditorUi for DebugUi {
 		if ui.button("Send").clicked() {
 			params
 				.commands
-				.queue(ApMessage::new(&*params.archipelago_message));
+				.queue(ChatMessage::text(&*params.archipelago_message));
 		}
 
 		ui.separator();

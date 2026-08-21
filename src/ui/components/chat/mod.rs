@@ -1,10 +1,12 @@
+pub mod msg;
+
 use crate::{
 	component_name,
-	game::archipelago::{
-		ApClient,
-		msg::{ApMessage, RichText},
+	game::archipelago::ApClient,
+	ui::components::{
+		AppEditableText,
+		chat::msg::{ChatMessage, RichText},
 	},
-	ui::components::AppEditableText,
 	util::component_exists,
 };
 use archipelago_rs::ConnectionState;
@@ -45,16 +47,18 @@ impl ChatComponent {
 			Node {
 				display: Display::Flex,
 				flex_direction: FlexDirection::Column,
-				height: px(200),
+				height: percent(100),
+				width: percent(100),
 			}
 			Children [
 				@ChatBox Node {
 					width: percent(100),
-					height: percent(85)
+					height: percent(100),
+					flex_grow: 1.0,
 				},
 				@ChatInput Node {
 					width: percent(100),
-					height: percent(15)
+					height: px(32)
 				},
 			]
 		}
@@ -128,7 +132,7 @@ fn on_submit(
 					commands.trigger(args);
 				}
 				Err(err) => {
-					commands.write_message(ApMessage::new(err.render()));
+					commands.write_message(ChatMessage::text(err.render()));
 				}
 			}
 			text.editor.set_text("");
@@ -136,7 +140,7 @@ fn on_submit(
 		}
 
 		let ConnectionState::Connected(apclient) = apclient.state_mut() else {
-			commands.queue(ApMessage::new(msg));
+			commands.queue(ChatMessage::text(msg));
 			text.editor.set_text("");
 			return Ok(());
 		};
@@ -234,7 +238,7 @@ impl ChatInput {
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-struct QueuedMessages(Vec<ApMessage>);
+struct QueuedMessages(Vec<ChatMessage>);
 
 fn chat_message(parent: Entity, msg: &str) -> impl Scene {
 	bsn! {
@@ -262,7 +266,7 @@ fn rich_chat_message(commands: &mut Commands, parent: Entity, rich_text: &RichTe
 
 fn on_ap_message(
 	mut commands: Commands,
-	mut messages: MessageReader<ApMessage>,
+	mut messages: MessageReader<ChatMessage>,
 	chatbox: Option<Single<Entity, With<ChatBox>>>,
 	mut queue: ResMut<QueuedMessages>,
 ) {
@@ -276,10 +280,10 @@ fn on_ap_message(
 
 		for msg in messages.read() {
 			match msg {
-				ApMessage::Text(msg) => {
+				ChatMessage::Text(msg) => {
 					commands.queue_spawn_scene(chat_message(*chatbox, msg));
 				}
-				ApMessage::Rich(msg) => {
+				ChatMessage::Rich(msg) => {
 					rich_chat_message(&mut commands, *chatbox, msg);
 				}
 			}
@@ -292,10 +296,10 @@ fn on_ap_message(
 fn dump_queue(event: On<Add, ChatBox>, mut commands: Commands, mut queue: ResMut<QueuedMessages>) {
 	for msg in queue.drain(..) {
 		match msg {
-			ApMessage::Text(msg) => {
+			ChatMessage::Text(msg) => {
 				commands.queue_spawn_scene(chat_message(event.event_target(), &msg));
 			}
-			ApMessage::Rich(msg) => {
+			ChatMessage::Rich(msg) => {
 				rich_chat_message(&mut commands, event.event_target(), &msg);
 			}
 		}
@@ -312,9 +316,9 @@ mod cmd {
 	use clap::{Parser, Subcommand};
 	use itertools::Itertools;
 
-	use crate::game::{
-		archipelago::{ApClient, msg::ApMessage},
-		evt::NewGame,
+	use crate::{
+		game::{archipelago::ApClient, evt::NewGame},
+		ui::components::chat::msg::ChatMessage,
 	};
 
 	#[derive(Event, Parser)]
@@ -362,11 +366,11 @@ mod cmd {
 					info!("Requesting sync...");
 
 					let Err(err) = apclient.sync() else {
-						commands.write_message(ApMessage::new("Requesting sync..."));
+						commands.write_message(ChatMessage::text("Requesting sync..."));
 						return;
 					};
 
-					commands.write_message(ApMessage::error(format!("Failed to sync: {err}")));
+					commands.write_message(ChatMessage::error(format!("Failed to sync: {err}")));
 				}
 				Command::Connect {
 					url,
@@ -394,7 +398,7 @@ mod cmd {
 								.sorted_by_key(|l| l.id())
 								.map(|l| format!("{} ({})", l.name(), l.id()));
 							let msg = itertools::join(iter, "\n");
-							commands.write_message(ApMessage::new(msg));
+							commands.write_message(ChatMessage::text(msg));
 						}
 						(false, true) => {
 							let iter = apclient
@@ -402,7 +406,7 @@ mod cmd {
 								.sorted_by_key(|l| l.id())
 								.map(|l| format!("{} ({})", l.name(), l.id()));
 							let msg = itertools::join(iter, "\n");
-							commands.write_message(ApMessage::new(msg));
+							commands.write_message(ChatMessage::text(msg));
 						}
 						_ => {
 							let checked = apclient
@@ -418,7 +422,7 @@ mod cmd {
 								.chain(std::iter::once(String::from("Unchecked:")))
 								.chain(unchecked);
 							let msg = itertools::join(iter, "\n");
-							commands.write_message(ApMessage::new(msg));
+							commands.write_message(ChatMessage::text(msg));
 						}
 					}
 				}
@@ -432,7 +436,7 @@ mod cmd {
 						.iter()
 						.map(|i| format!("{} ({})", i.item().name(), i.item().id()));
 					let msg = itertools::join(iter, "\n");
-					commands.write_message(ApMessage::new(msg));
+					commands.write_message(ChatMessage::text(msg));
 				}
 				Command::Cheat { location } => {
 					let ConnectionState::Connected(apclient) = apclient.state_mut() else {
@@ -442,7 +446,7 @@ mod cmd {
 					if let Some(location) = location
 						&& let Err(err) = apclient.mark_checked([*location])
 					{
-						commands.write_message(ApMessage::error(err));
+						commands.write_message(ChatMessage::error(err));
 					}
 				}
 			}

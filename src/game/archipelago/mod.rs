@@ -1,17 +1,15 @@
-pub mod msg;
 pub mod traps;
 
 use super::FruitKind;
 use crate::{
 	GameState,
 	game::{
-		archipelago::{
-			msg::{RichText, TextNode, style_from_apclr},
-			traps::{BlindnessTrap, ImpulseTrap, SecrecyTrap, SecrecyTurns, ShuffleTrap, ThanosTrap},
+		archipelago::traps::{
+			BlindnessTrap, ImpulseTrap, SecrecyTrap, SecrecyTurns, ShuffleTrap, ThanosTrap,
 		},
-		evt::{DropPlaceholder, FruitCombo, PlaceholderDropped, SpawnFruit},
+		evt::{DropPlaceholder, FruitCombo, SpawnFruit},
 		persistence::LoadSavedGame,
-		res::{CanSeeNextFruit, FruitDropDelay, FruitOrder, Score},
+		res::{CanSeeNextFruit, FruitDropCooldown, FruitDropDelay, FruitOrder, Score},
 		termination::{
 			lose::{Lose, LoseHeight},
 			win::Win,
@@ -19,17 +17,18 @@ use crate::{
 	},
 	ui::{
 		EnableChatbox,
-		components::{NextFruitComponent, ScoreComponent},
+		components::{
+			NextFruitComponent, ScoreComponent,
+			chat::msg::{ChatMessage, RichText, TextNode, style_from_apclr},
+		},
 	},
 	util::component_added,
 };
 use archipelago_rs::{ClientStatus, Connection, ItemHandling};
-use bevy::{ecs::system::SystemParam, platform::collections::HashSet, prelude::*};
-use msg::ApMessage;
+use bevy::{platform::collections::HashSet, prelude::*};
 use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::time::Duration;
 use strum::EnumCount;
 use strum_macros::FromRepr;
 use traps::TrapPlugin;
@@ -45,10 +44,9 @@ impl Plugin for ArchipelagoPlugin {
 
 		app
 			.init_resource::<NextThreshold>()
-			.init_resource::<FruitDropCooldown>()
 			.init_resource::<NextFruitUnlocked>()
 			.init_resource::<ApClient>()
-			.add_message::<ApMessage>()
+			.add_message::<ChatMessage>()
 			.add_plugins(TrapPlugin)
 			.add_observer(ReceivedItem::handle.run_if(is_logged_in))
 			.add_observer(ProgressiveHeightItem::handle.run_if(is_logged_in))
@@ -58,16 +56,15 @@ impl Plugin for ArchipelagoPlugin {
 			.add_observer(NextFruitUnlock::handle.run_if(is_logged_in))
 			.add_observer(check_spawned_fruit.run_if(is_logged_in))
 			.add_observer(on_win.run_if(is_logged_in))
-			.add_observer(on_drop_fruit.run_if(is_logged_in))
 			.add_observer(on_load_savegame.run_if(is_logged_in))
 			.add_observer(on_fruit_combo.run_if(is_logged_in))
 			.add_observer(on_aplogin)
 			.add_systems(
 				Update,
 				(
+					update_cooldown.run_if(in_state(GameState::Gameplay)),
 					set_next_scores
 						.run_if(resource_changed::<NextThreshold>.or_else(component_added::<NextThreshMarker>)),
-					tick_cooldown.run_if(in_state(GameState::Gameplay)),
 				)
 					.run_if(is_logged_in),
 			)
@@ -192,7 +189,10 @@ fn receive_archipelago_events(mut apclient: ResMut<ApClient>, mut commands: Comm
 				let Some(apclient) = apclient.client() else {
 					continue;
 				};
-				commands.write_message(ApMessage::from_print(&apclient.this_player().name(), print));
+				commands.write_message(ChatMessage::from_print(
+					&apclient.this_player().name(),
+					print,
+				));
 			}
 			archipelago_rs::Event::ReceivedItems(index) => {
 				if index == 0 {
@@ -219,11 +219,13 @@ fn receive_archipelago_events(mut apclient: ResMut<ApClient>, mut commands: Comm
 				}
 			}
 			archipelago_rs::Event::Error(err) => {
-				commands.write_message(ApMessage::error(err));
+				commands.write_message(ChatMessage::error(err));
 			}
 			archipelago_rs::Event::Bounce { .. } => {}
 			archipelago_rs::Event::DeathLink { source, .. } => {
-				commands.write_message(ApMessage::new(format!("DeathLink received from {source}")));
+				commands.write_message(ChatMessage::Text(format!(
+					"DeathLink received from {source}"
+				)));
 				commands.trigger(Lose);
 			}
 			archipelago_rs::Event::KeyChanged { .. } => {}
@@ -353,22 +355,19 @@ impl NextFruitUnlock {
 #[derive(Event)]
 pub struct ApLoginComplete;
 
-#[derive(SystemParam)]
-pub struct LoginRes<'w> {
-	apclient: Res<'w, ApClient>,
-	fruit_order: ResMut<'w, FruitOrder>,
-	lose_height: ResMut<'w, LoseHeight>,
-	drop_delay: ResMut<'w, FruitDropDelay>,
-	next_unlocked: ResMut<'w, NextFruitUnlocked>,
-	can_see_next: ResMut<'w, CanSeeNextFruit>,
-	next_thresh: ResMut<'w, NextThreshold>,
-}
-
 fn on_aplogin(
 	_: On<ApLoginComplete>,
 	mut commands: Commands,
 	q_scores: Query<Entity, With<ScoreComponent>>,
-	mut res: LoginRes,
+	apclient: Res<ApClient>,
+	mut fruit_order: ResMut<FruitOrder>,
+	mut lose_height: ResMut<LoseHeight>,
+	mut drop_delay: ResMut<FruitDropDelay>,
+	mut next_unlocked: ResMut<NextFruitUnlocked>,
+	mut can_see_next: ResMut<CanSeeNextFruit>,
+	mut next_thresh: ResMut<NextThreshold>,
+	game_state: Res<State<GameState>>,
+	mut next_game_state: ResMut<NextState<GameState>>,
 	mut previously_logged_in: Local<bool>,
 ) {
 	if !*previously_logged_in {
@@ -381,29 +380,31 @@ fn on_aplogin(
 			]);
 		}
 
+		if **game_state == GameState::MainMenu {
+			next_game_state.set(GameState::InitGameplay);
+		}
+
 		*previously_logged_in = true;
 	}
 
-	let Some(apclient) = res.apclient.client() else {
+	let Some(apclient) = apclient.client() else {
 		unreachable!("Logic error");
 	};
 
 	let slot_data = apclient.slot_data();
 	if let Some(shuffled) = slot_data.shuffle_fruit {
-		res
-			.fruit_order
-			.set_order(shuffled, slot_data.also_shuffle_sizes);
+		fruit_order.set_order(shuffled, slot_data.also_shuffle_sizes);
 	}
 
-	res.lose_height.max_upgrades = slot_data.height_upgrade_count;
+	lose_height.max_upgrades = slot_data.height_upgrade_count;
 
-	res.drop_delay.additional_cooldown = slot_data.starting_cooldown as f32;
-	res.drop_delay.max_upgrades = slot_data.cooldown_upgrade_count;
+	drop_delay.additional_cooldown = slot_data.starting_cooldown as f32;
+	drop_delay.max_upgrades = slot_data.cooldown_upgrade_count;
 
-	res.fruit_order.limit = slot_data.max_fruit_size;
+	fruit_order.limit = slot_data.max_fruit_size;
 
-	**res.next_unlocked = !slot_data.next_needs_unlock;
-	**res.can_see_next = **res.next_unlocked;
+	**next_unlocked = !slot_data.next_needs_unlock;
+	**can_see_next = **next_unlocked;
 
 	let Some(next) = get_next_score(
 		&slot_data.scoresanity_thresholds,
@@ -413,7 +414,7 @@ fn on_aplogin(
 		return;
 	};
 
-	res.next_thresh.0 = next.value;
+	next_thresh.0 = next.value;
 }
 
 #[derive(Resource, Reflect, Default)]
@@ -481,19 +482,6 @@ fn next() -> impl Scene {
 	}
 }
 
-#[derive(Resource, Reflect, Deref, DerefMut)]
-struct FruitDropCooldown(Timer);
-
-impl FromWorld for FruitDropCooldown {
-	fn from_world(world: &mut World) -> Self {
-		let delay = world.resource::<FruitDropDelay>();
-		Self(Timer::new(
-			Duration::from_secs_f32(delay.delay()),
-			TimerMode::Once,
-		))
-	}
-}
-
 #[derive(Component, Default, Clone)]
 struct DropCooldownMarker;
 
@@ -512,20 +500,9 @@ fn drop_cooldown() -> impl Scene {
 	}
 }
 
-fn on_drop_fruit(
-	_: On<PlaceholderDropped>,
-	mut cooldown: ResMut<FruitDropCooldown>,
-	delay: Res<FruitDropDelay>,
-) {
-	cooldown.reset();
-	cooldown.set_duration(Duration::from_secs_f32(delay.delay()));
-}
-
-fn tick_cooldown(
+fn update_cooldown(
+	cooldown: Res<FruitDropCooldown>,
 	q_text: Query<&mut Text, With<DropCooldownMarker>>,
-	mut cooldown: ResMut<FruitDropCooldown>,
-	time: Res<Time>,
-	delay: Res<FruitDropDelay>,
 ) {
 	if cooldown.just_finished() {
 		for mut text in q_text {
@@ -538,10 +515,8 @@ fn tick_cooldown(
 		return;
 	}
 
-	cooldown.tick(time.delta());
-
 	for mut text in q_text {
-		text.0 = format!("{:.2}", delay.delay() - cooldown.elapsed_secs());
+		text.0 = format!("{:.2}", cooldown.remaining_secs());
 	}
 }
 
@@ -641,9 +616,9 @@ fn monitor_next_fruit_vis(
 	}
 }
 
-fn smoothie() -> ApMessage {
+fn smoothie() -> ChatMessage {
 	let Some(name) = petname::petname(2, " ") else {
-		return ApMessage::Text("You got a smoothie!".to_string());
+		return ChatMessage::Text("You got a smoothie!".to_string());
 	};
 
 	fn random_style(mut node: TextNode) -> TextNode {
@@ -664,7 +639,7 @@ fn smoothie() -> ApMessage {
 		.next()
 		.map(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'))
 		.unwrap_or_default();
-	ApMessage::Rich(RichText::from_iter([
+	ChatMessage::Rich(RichText::from_iter([
 		TextNode::new(format!("You got {} ", if is_vowel { "an" } else { "a" })),
 		random_style(TextNode::new(name)),
 		TextNode::new(" smoothie!"),
@@ -679,7 +654,7 @@ fn on_fruit_combo(event: On<FruitCombo>, mut commands: Commands, mut apclient: R
 	let location = best_fruit_of(event.0);
 
 	if let Err(err) = apclient.mark_checked([location]) {
-		commands.write_message(ApMessage::error(err));
+		commands.write_message(ChatMessage::error(err));
 		commands
 			.delayed()
 			.secs(1.0)

@@ -139,12 +139,12 @@ impl LeftUi {
 				flex_direction: FlexDirection::Column,
 				width: percent(20),
 				height: percent(100),
-				justify_content: JustifyContent::SpaceBetween,
-				align_items: AlignItems::Stretch,
+				justify_content: JustifyContent::SpaceEvenly,
+				align_items: AlignItems::Center,
 			}
 			Children [
 				@ScoreComponent Node {
-					margin: { UiRect::left(px(48)).with_top(px(176)) }
+					margin: { UiRect::left(px(48)) }
 				},
 				appzone(bsn! {
 					@LoginFormComponent Node {
@@ -154,7 +154,7 @@ impl LeftUi {
 					display: Display::Flex,
 					flex_direction: FlexDirection::Column,
 					width: percent(100),
-					margin: { UiRect::left(px(48)).with_bottom(px(128)) },
+					margin: { UiRect::left(px(48)) },
 				}
 			]
 		}
@@ -191,17 +191,17 @@ fn right() -> impl Scene {
 			flex_direction: FlexDirection::Column,
 			width: percent(20),
 			height: percent(100),
-			justify_content: JustifyContent::SpaceBetween,
-			align_items: AlignItems::Stretch,
+			justify_content: JustifyContent::SpaceEvenly,
+			align_items: AlignItems::Center,
 		}
 		Children [
 			@NextFruitComponent Node {
 				width: percent(100),
-				margin: { UiRect::left(px(-48)).with_top(px(176)) },
+				margin: { UiRect::left(px(-48)) },
 			},
 			@FruitCircleComponent Node {
 				width: percent(100),
-				margin: { UiRect::left(px(-48)).with_bottom(px(128)) }
+				margin: { UiRect::left(px(-48)) }
 			},
 		]
 	}
@@ -326,16 +326,25 @@ impl EnableChatbox {
 		mut commands: Commands,
 		left: Single<Entity, With<LeftZone>>,
 		q_chat_boxes: Query<(), With<ChatComponent>>,
+		mut q_nodes: Query<&mut Node>,
 	) {
 		if !q_chat_boxes.is_empty() {
 			return;
 		}
 
-		commands.queue_spawn_scene_list(bsn_list! [
+		if let Ok(mut node) = q_nodes.get_mut(*left) {
+			node.margin.bottom = percent(10);
+			node.max_height = percent(50);
+			node.min_height = percent(50);
+		}
+
+		commands.queue_spawn_scene(bsn! {
 			@ChatComponent Node {
-				width: percent(100)
-			} ChildOf({*left}),
-		]);
+				width: percent(100),
+				height: px(0),
+				flex_grow: 1.0,
+			} ChildOf({*left})
+		});
 	}
 }
 
@@ -350,7 +359,8 @@ fn add_gameplay_ui(
 
 	commands.queue_spawn_scene_list(bsn_list! [
 		@SaveLoadComponent Node {
-			width: percent(100)
+			width: percent(100),
+			flex_shrink: 0.0,
 		} ChildOf({*left}),
 	]);
 }

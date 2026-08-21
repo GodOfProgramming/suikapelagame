@@ -9,14 +9,6 @@ pub fn despawn_query<F: QueryFilter>(mut commands: Commands, query: Query<Entity
 	}
 }
 
-pub fn entity_exists<F: QueryFilter>(q: Query<(), F>) -> bool {
-	!none_of(q)
-}
-
-pub fn none_of<F: QueryFilter>(q: Query<(), F>) -> bool {
-	q.is_empty()
-}
-
 pub fn component_exists<C: Component>(q: Query<(), With<C>>) -> bool {
 	!q.is_empty()
 }
