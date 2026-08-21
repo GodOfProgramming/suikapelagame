@@ -93,14 +93,24 @@ impl BlenderComponent {
 		bsn! {
 			{ component_name!(BlenderComponent) }
 			Node {
+				height: px(0),
+				flex_grow: 1.0,
 				width: percent(60),
+				align_items: AlignItems::Center,
+				justify_content: JustifyContent::Center,
 				aspect_ratio: {Some(1.0)}
 			}
-			ImageNode {
-				image: "binary/blender.png"
-			}
 			Children [
-				@SpinningFruitComponent
+				ImageNode {
+					image: "binary/blender.png"
+				} Node {
+					position_type: PositionType::Absolute,
+					width: percent(100),
+					height: percent(100),
+				},
+				@SpinningFruitComponent Node {
+					height: percent(100),
+				},
 			]
 		}
 	}
@@ -131,8 +141,6 @@ impl SpinningFruitComponent {
 		bsn! {
 			{ component_name!(SpinningFruitComponent) }
 			Node {
-				width: percent(100),
-				position_type: PositionType::Relative,
 				aspect_ratio: { Some(1.0) }
 			}
 			Children [

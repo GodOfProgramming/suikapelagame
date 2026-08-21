@@ -141,11 +141,10 @@ impl LeftUi {
 				height: percent(100),
 				justify_content: JustifyContent::SpaceEvenly,
 				align_items: AlignItems::Center,
+				padding: { UiRect::left(px(48.0)) }
 			}
 			Children [
-				@ScoreComponent Node {
-					margin: { UiRect::left(px(48)) }
-				},
+				@ScoreComponent,
 				appzone(bsn! {
 					@LoginFormComponent Node {
 						width: percent(100),
@@ -154,7 +153,6 @@ impl LeftUi {
 					display: Display::Flex,
 					flex_direction: FlexDirection::Column,
 					width: percent(100),
-					margin: { UiRect::left(px(48)) },
 				}
 			]
 		}
@@ -170,10 +168,11 @@ impl MiddleUi {
 			Name::new("Middle")
 			Transform Visibility
 			Node {
-				width: percent(60),
+				width: px(0),
 				height: percent(100),
 				justify_content: JustifyContent::Center,
 				align_items: AlignItems::Center,
+				flex_grow: 1.0,
 				aspect_ratio: { Some(1.0 / 3.0) }
 			}
 			Children [
@@ -193,15 +192,14 @@ fn right() -> impl Scene {
 			height: percent(100),
 			justify_content: JustifyContent::SpaceEvenly,
 			align_items: AlignItems::Center,
+			padding: { UiRect::right(px(48.0)) }
 		}
 		Children [
 			@NextFruitComponent Node {
 				width: percent(100),
-				margin: { UiRect::left(px(-48)) },
 			},
 			@FruitCircleComponent Node {
 				width: percent(100),
-				margin: { UiRect::left(px(-48)) }
 			},
 		]
 	}
