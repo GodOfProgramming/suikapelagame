@@ -6,7 +6,7 @@ use crate::{
 	GameState,
 	game::{
 		archipelago::{
-			msg::tags,
+			msg::{RichText, TextNode, style_from_apclr},
 			traps::{BlindnessTrap, ImpulseTrap, SecrecyTrap, SecrecyTurns, ShuffleTrap, ThanosTrap},
 		},
 		evt::{DropPlaceholder, FruitCombo, PlaceholderDropped, SpawnFruit},
@@ -41,7 +41,7 @@ impl Plugin for ArchipelagoPlugin {
 	fn build(&self, app: &mut App) {
 		fn is_logged_in(apclient: Res<ApClient>) -> bool {
 			apclient.is_connected()
-		};
+		}
 
 		app
 			.init_resource::<NextThreshold>()
@@ -62,7 +62,6 @@ impl Plugin for ArchipelagoPlugin {
 			.add_observer(on_load_savegame.run_if(is_logged_in))
 			.add_observer(on_fruit_combo.run_if(is_logged_in))
 			.add_observer(on_aplogin)
-			.add_observer(msg::on_chatbox_creation)
 			.add_systems(
 				Update,
 				(
@@ -287,7 +286,7 @@ impl ReceivedItem {
 			ApItem::TrapSecrecy => commands.trigger(SecrecyTrap(3)),
 			ApItem::TrapBlind => commands.trigger(BlindnessTrap(3)),
 			ApItem::Smoothie => {
-				commands.write_message(ApMessage::Rich(smoothie()));
+				commands.write_message(smoothie());
 			}
 		}
 	}
@@ -642,24 +641,34 @@ fn monitor_next_fruit_vis(
 	}
 }
 
-fn smoothie() -> String {
+fn smoothie() -> ApMessage {
 	let Some(name) = petname::petname(2, " ") else {
-		return String::from("basic");
-	};
-	let Some(color) = [
-		tags::RED,
-		tags::GREEN,
-		tags::YELLOW,
-		tags::BLUE,
-		tags::MAGENTA,
-		tags::CYAN,
-		tags::WHITE,
-	]
-	.choose(&mut rand::rng()) else {
-		unreachable!();
+		return ApMessage::Text("You got a smoothie!".to_string());
 	};
 
-	format!("You got a [{color}]{name} []smoothie!")
+	fn random_style(mut node: TextNode) -> TextNode {
+		use archipelago_rs::TextColor::{self, *};
+		const COLOR_CHOICES: &[TextColor] = &[
+			Bold, Underline, Black, Red, Green, Yellow, Blue, Magenta, Cyan, White, BlackBg, RedBg,
+			GreenBg, YellowBg, BlueBg, MagentaBg, CyanBg, WhiteBg,
+		];
+		style_from_apclr(
+			&mut node,
+			COLOR_CHOICES.choose(&mut rand::rng()).cloned().unwrap(),
+		);
+		node
+	}
+
+	let is_vowel = name
+		.chars()
+		.next()
+		.map(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'))
+		.unwrap_or_default();
+	ApMessage::Rich(RichText::from_iter([
+		TextNode::new(format!("You got {} ", if is_vowel { "an" } else { "a" })),
+		random_style(TextNode::new(name)),
+		TextNode::new(" smoothie!"),
+	]))
 }
 
 fn on_fruit_combo(event: On<FruitCombo>, mut commands: Commands, mut apclient: ResMut<ApClient>) {

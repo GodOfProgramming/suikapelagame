@@ -51,7 +51,6 @@ fn main() {
 			PhysicsPlugins::default(),
 			EntropyPlugin::<WyRand>::default(),
 			SvgPlugin,
-			bevy_simple_rich_text::RichTextPlugin,
 		))
 		.insert_resource(ClearColor(Color::srgb_u8(0xff, 0xd5, 0x9d)))
 		.insert_resource(Gravity(Vec2::NEG_Y * 3200.0))

@@ -1,6 +1,9 @@
 use crate::{
 	component_name,
-	game::archipelago::{ApClient, msg::ApMessage},
+	game::archipelago::{
+		ApClient,
+		msg::{ApMessage, RichText},
+	},
 	ui::components::AppEditableText,
 	util::component_exists,
 };
@@ -95,7 +98,6 @@ fn send_scroll_events(
 
 		for pointer_map in hover_map.values() {
 			for entity in pointer_map.keys().copied() {
-				info!("send scroll to {entity}");
 				commands.trigger(Scroll {
 					entity,
 					kind: ScrollKind::Delta(delta),
@@ -168,7 +170,6 @@ fn chatbox_scroll(
 	mut scroll: On<Scroll>,
 	mut q: Query<(&mut ScrollPosition, &Node, &ComputedNode)>,
 ) {
-	info!("received scroll");
 	let Ok((mut scroll_position, node, computed)) = q.get_mut(scroll.entity) else {
 		return;
 	};
@@ -246,8 +247,17 @@ fn chat_message(parent: Entity, msg: &str) -> impl Scene {
 	}
 }
 
-fn rich_chat_message(parent: Entity, msg: &str) -> impl Bundle {
-	(ChildOf(parent), bevy_simple_rich_text::RichText::new(msg))
+fn rich_chat_message(commands: &mut Commands, parent: Entity, rich_text: &RichText) -> impl Bundle {
+	commands
+		.spawn((ChildOf(parent), Text::default()))
+		.with_children(|cc| {
+			for node in rich_text.iter() {
+				let mut ec = cc.spawn(TextSpan::new(node.text()));
+				for style in node.styles() {
+					style.apply(&mut ec);
+				}
+			}
+		});
 }
 
 fn on_ap_message(
@@ -270,7 +280,7 @@ fn on_ap_message(
 					commands.queue_spawn_scene(chat_message(*chatbox, msg));
 				}
 				ApMessage::Rich(msg) => {
-					commands.spawn(rich_chat_message(*chatbox, msg));
+					rich_chat_message(&mut commands, *chatbox, msg);
 				}
 			}
 		}
@@ -286,7 +296,7 @@ fn dump_queue(event: On<Add, ChatBox>, mut commands: Commands, mut queue: ResMut
 				commands.queue_spawn_scene(chat_message(event.event_target(), &msg));
 			}
 			ApMessage::Rich(msg) => {
-				commands.spawn(rich_chat_message(event.event_target(), &msg));
+				rich_chat_message(&mut commands, event.event_target(), &msg);
 			}
 		}
 	}
