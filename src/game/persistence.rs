@@ -146,7 +146,7 @@ impl SaveGame {
 		let out = postcard::to_stdvec(&savegame)?;
 
 		#[cfg(not(debug_assertions))]
-		let json = None;
+		let json: Option<String> = None;
 		#[cfg(debug_assertions)]
 		let json = serde_json::to_string_pretty(&savegame).ok();
 

@@ -33,14 +33,19 @@ strum_macros = "0.28.0"
 validator = { version = "0.20.0", features = ["derive"] }
 wyrand = "0.4.1"
 
-[build-dependencies]
-anyhow = "1.0"
-
 [profile.dev]
 opt-level = 0
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+
 
 [features]
 dev = ["dep:beditor"]
