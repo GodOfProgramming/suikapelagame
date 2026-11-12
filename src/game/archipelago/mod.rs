@@ -12,7 +12,7 @@ use crate::{
 		res::{CanSeeNextFruit, FruitDropCooldown, FruitDropDelay, FruitOrder, Score},
 		termination::{
 			lose::{Lose, LoseHeight},
-			win::Win,
+			win::{TryWin, Win},
 		},
 	},
 	ui::{
@@ -87,8 +87,9 @@ pub struct ApClient(Connection<SlotData>);
 
 impl ApClient {
 	pub fn login(url: String, name: String, pass: Option<String>) -> Self {
-		let mut opts =
-			archipelago_rs::ConnectionOptions::new().receive_items(ItemHandling::OtherWorlds {
+		let mut opts = archipelago_rs::ConnectionOptions::new()
+			.tags([archipelago_rs::tags::DEATH_LINK])
+			.receive_items(ItemHandling::OtherWorlds {
 				own_world: true,
 				starting_inventory: true,
 			});
@@ -121,23 +122,13 @@ pub struct SlotData {
 	pub next_needs_unlock: bool,
 }
 
-#[derive(Debug, Default, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Default, Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum Goal {
 	#[default]
 	LargestFruit,
 	Score,
 	Both,
-}
-
-impl Goal {
-	pub fn win_by_score(&self) -> bool {
-		matches!(self, Self::Score | Self::Both)
-	}
-
-	pub fn win_by_fruit(&self) -> bool {
-		matches!(self, Self::LargestFruit | Self::Both)
-	}
 }
 
 #[derive(Debug, Default, Serialize_repr, Deserialize_repr)]
@@ -222,11 +213,20 @@ fn receive_archipelago_events(mut apclient: ResMut<ApClient>, mut commands: Comm
 				commands.write_message(ChatMessage::error(err));
 			}
 			archipelago_rs::Event::Bounce { .. } => {}
-			archipelago_rs::Event::DeathLink { source, .. } => {
-				commands.write_message(ChatMessage::Text(format!(
-					"DeathLink received from {source}"
-				)));
-				commands.trigger(Lose);
+			archipelago_rs::Event::DeathLink { source, slots, .. } => {
+				let Some(apclient) = apclient.client() else {
+					continue;
+				};
+
+				let this = apclient.this_player();
+				if let Some(slots) = slots
+					&& slots.contains(&this.slot())
+				{
+					commands.write_message(ChatMessage::Text(format!(
+						"DeathLink received from {source}"
+					)));
+					commands.trigger(Lose);
+				}
 			}
 			archipelago_rs::Event::KeyChanged { .. } => {}
 		}
@@ -432,11 +432,7 @@ fn monitor_score(
 		return;
 	};
 
-	let slot_data = apclient.slot_data();
-
-	if slot_data.goal.win_by_score() && *index >= slot_data.scoresanity_thresholds.len() {
-		commands.trigger(Win);
-	}
+	commands.trigger(TryWin::ViaScore(*index));
 
 	let Some(&thresh) = apclient.slot_data().scoresanity_thresholds.get(*index) else {
 		return;
@@ -520,25 +516,8 @@ fn update_cooldown(
 	}
 }
 
-fn check_spawned_fruit(
-	event: On<SpawnFruit>,
-	mut commands: Commands,
-	apclient: Res<ApClient>,
-	fruit_order: Res<FruitOrder>,
-) {
-	let Some(last) = fruit_order.order.last() else {
-		unreachable!();
-	};
-
-	let Some(apclient) = apclient.client() else {
-		return;
-	};
-
-	let slot_data = apclient.slot_data();
-
-	if event.fruit.kind == last.kind && slot_data.goal.win_by_fruit() {
-		commands.trigger(Win);
-	}
+fn check_spawned_fruit(event: On<SpawnFruit>, mut commands: Commands) {
+	commands.trigger(TryWin::ViaFruit(event.fruit.kind))
 }
 
 fn on_win(

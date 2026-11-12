@@ -35,6 +35,7 @@ fn main() {
 
 	#[cfg(feature = "dev")]
 	{
+		use avian2d::prelude::*;
 		use beditor::prelude::*;
 		app
 			.add_plugins(
@@ -42,7 +43,19 @@ fn main() {
 					.register_game_camera::<GameCamera>()
 					.configure_defaults(|_, defaults| defaults.set(ImagePlugin::default_nearest())),
 			)
-			.add_plugins(debug::DebugPlugin);
+			.add_plugins(debug::DebugPlugin)
+			.add_systems(
+				OnEnter(EditorState::Simulating(beditor::SimulationState::Live)),
+				|mut time: ResMut<Time<Physics>>| {
+					time.unpause();
+				},
+			)
+			.add_systems(
+				OnExit(EditorState::Simulating(beditor::SimulationState::Live)),
+				|mut time: ResMut<Time<Physics>>| {
+					time.pause();
+				},
+			);
 	}
 	#[cfg(not(feature = "dev"))]
 	{

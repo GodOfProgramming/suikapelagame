@@ -9,7 +9,7 @@ use crate::game::{
 	},
 	cmp::Invincible,
 	evt::SetCooldown,
-	res::{FruitDropCooldown, FruitDropDelay, FruitOrder, NextFruit, PlaceholderPosition, Score},
+	res::{FruitDropCooldown, FruitOrder, NextFruit, PlaceholderPosition, Score},
 	scn::{FruitBody, PlaceholderFruit},
 };
 use avian2d::prelude::*;
@@ -79,7 +79,6 @@ struct FruitDataToSave {
 struct SaveParams<'w, 's> {
 	placeholder: Option<Single<'w, 's, &'static Fruit, With<PlaceholderFruit>>>,
 	cooldown: Res<'w, FruitDropCooldown>,
-	drop_delay: Res<'w, FruitDropDelay>,
 	rng: Single<'w, 's, &'static mut WyRand, With<GlobalRng>>,
 	score: Res<'w, Score>,
 	fruits: Query<'w, 's, FruitDataToSave, Without<PlaceholderFruit>>,

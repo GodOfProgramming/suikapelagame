@@ -37,9 +37,12 @@ impl Lose {
 			return Ok(());
 		};
 
-		let player = apclient.this_player();
-		let cause = format!("{} topped out!", player.name());
-		apclient.death_link(DeathLinkOptions::new().cause(cause))?;
+		if apclient.slot_data().deathlink {
+			let player = apclient.this_player();
+			let cause = format!("{} topped out!", player.name());
+			apclient.death_link(DeathLinkOptions::new().cause(cause))?;
+		}
+
 		Ok(())
 	}
 }

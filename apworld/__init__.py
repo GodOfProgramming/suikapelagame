@@ -2,7 +2,6 @@ from collections.abc import Mapping
 from typing import Any, Final
 from os import linesep
 import dataclasses
-import math
 
 from BaseClasses import Region, MultiWorld
 from Options import OptionError

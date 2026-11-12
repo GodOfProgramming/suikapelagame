@@ -317,7 +317,10 @@ mod cmd {
 	use itertools::Itertools;
 
 	use crate::{
-		game::{archipelago::ApClient, evt::NewGame},
+		game::{
+			archipelago::{ApClient, SlotData},
+			evt::NewGame,
+		},
 		ui::components::chat::msg::ChatMessage,
 	};
 
@@ -350,8 +353,12 @@ mod cmd {
 		},
 		Items,
 		Cheat {
-			#[arg(short, long, help = "Force release this item location")]
-			location: Option<i64>,
+			#[command(subcommand)]
+			command: CheatArgs,
+		},
+		Info {
+			#[command(subcommand)]
+			command: InfoArgs,
 		},
 	}
 
@@ -438,16 +445,55 @@ mod cmd {
 					let msg = itertools::join(iter, "\n");
 					commands.write_message(ChatMessage::text(msg));
 				}
-				Command::Cheat { location } => {
+				Command::Cheat { command } => {
 					let ConnectionState::Connected(apclient) = apclient.state_mut() else {
 						return;
 					};
 
-					if let Some(location) = location
+					command.handle(apclient, &mut commands);
+				}
+
+				Command::Info { command } => {
+					command.handle(&mut apclient, &mut commands);
+				}
+			}
+		}
+	}
+
+	#[derive(Subcommand, Debug)]
+	enum CheatArgs {
+		Location { value: Option<i64> },
+	}
+
+	impl CheatArgs {
+		fn handle(&self, apclient: &mut archipelago_rs::Client<SlotData>, commands: &mut Commands) {
+			match &self {
+				Self::Location { value } => {
+					if let Some(location) = value
 						&& let Err(err) = apclient.mark_checked([*location])
 					{
 						commands.write_message(ChatMessage::error(err));
 					}
+				}
+			}
+		}
+	}
+
+	#[derive(Subcommand, Debug)]
+	enum InfoArgs {
+		SlotData,
+	}
+
+	impl InfoArgs {
+		fn handle(&self, apclient: &mut ResMut<ApClient>, commands: &mut Commands) {
+			match self {
+				Self::SlotData => {
+					let ConnectionState::Connected(apclient) = apclient.state() else {
+						return;
+					};
+
+					let slot_data = apclient.slot_data();
+					commands.write_message(ChatMessage::text(format!("{slot_data:#?}")));
 				}
 			}
 		}

@@ -13,6 +13,7 @@ use crate::{
 };
 use archipelago::ArchipelagoPlugin;
 use avian2d::prelude::*;
+use beditor::prelude::*;
 use bevy::{
 	camera::visibility::RenderLayers,
 	ecs::{
@@ -72,15 +73,15 @@ impl Plugin for GamePlugin {
 				(level.spawn(), init_gameplay),
 			)
 			.add_systems(OnEnter(GameState::Gameplay), send_event(NewGame))
-			.add_systems(
+			.add_app_systems(
 				First,
 				move_placeholder_location.run_if(in_state(GameState::Gameplay)),
 			)
-			.add_systems(
+			.add_app_systems(
 				Update,
 				(draw_gizmos, tick_cooldown).run_if(in_state(GameState::Gameplay)),
 			)
-			.add_systems(
+			.add_app_systems(
 				FixedUpdate,
 				(on_collisions, remove_invincibility).run_if(in_state(GameState::Gameplay)),
 			);

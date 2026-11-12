@@ -16,7 +16,7 @@ from .cfg import BASE_FRUIT_ORDER
 SCORESANITY_VALUES = {"2", "extra", "with_extra", "with extra"}
 
 
-class Scoresanity(Toggle):
+class Scoresanity(Choice):
     """
     Earn checks for various score thresholds.
 
@@ -31,6 +31,8 @@ class Scoresanity(Toggle):
 
     display_name = "Scoresanity"
 
+    option_disabled = NO
+    option_enabled = YES
     option_with_extra = WITH_EXTRA
 
     default = YES
@@ -40,7 +42,7 @@ class Scoresanity(Toggle):
         self.value = value
 
     @classmethod
-    def from_text(cls, text: str) -> Toggle:
+    def from_text(cls, text: str) -> Choice:
         if text.lower() in {"2", "extra", "with_extra", "with extra"}:
             return cls(2)
         else:
@@ -243,7 +245,7 @@ class HeightUpgradeCount(Range):
     default = 5
 
 
-class ShuffleFruitOrder(Toggle):
+class ShuffleFruitOrder(Choice):
     """
     Shuffle the fruit order. If set to 'visual', the fruit will get bigger as
     you progress. If 'on', the size of the fruit is also shuffled (this makes
@@ -256,6 +258,8 @@ class ShuffleFruitOrder(Toggle):
 
     display_name = "Shuffle Fruit Order"
 
+    option_disabled = NO
+    option_enabled = YES
     option_visual = VISUAL
 
     default = NO
@@ -265,7 +269,7 @@ class ShuffleFruitOrder(Toggle):
         self.value = value
 
     @classmethod
-    def from_text(cls, text: str) -> Toggle:
+    def from_text(cls, text: str) -> Choice:
         if text.lower() in {"2", "visual_only", "visual only", "visual"}:
             return cls(2)
         else:

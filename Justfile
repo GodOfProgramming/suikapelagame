@@ -16,7 +16,7 @@ build-apworld:
   set -e
 
   dir=$(mktemp -d)
-  builddir="$dir/suikapelagame-apworld"
+  builddir="$dir/suikapelagame"
 
   mkdir "$builddir"
 
@@ -33,7 +33,7 @@ package target="native": (build-client target) && build-apworld
   set -e
 
   dir=$(mktemp -d)
-  builddir="$dir/suikapelagame"
+  builddir="$dir/suikapelagame-bin"
 
   mkdir "$builddir"
 
